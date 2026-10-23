@@ -52,6 +52,7 @@ const th = {
   bodyN: 'ร่างที่', ended: 'สิ้นสุด', cloning: 'ยานกำลังจำลองร่างใหม่', allDropped: 'ของทุกอย่างตกอยู่ที่ซาก', deathMarked: 'จุดตายขึ้นบนแผนที่แล้ว',
   gearN: 'อุปกรณ์', itemsN: 'ของที่เก็บ', pieces: 'ชิ้น', takeFromBody: 'เก็บของจากซาก', bodyEmpty: 'ซากนี้ไม่มีของเหลือแล้ว', tookFromBody: 'เก็บของคืนจากซากแล้ว', bodySomeLeft: 'แถบล่างเต็ม ของบางชิ้นยังอยู่ที่ซาก',
   respawned: 'ระบบในยานจำลองร่างใหม่แล้ว เลือกของก่อนออกเดินทาง', warmNearShip: 'อุ่นขึ้นแล้ว',
+  inkLabel: 'ผลของหมึก', inkFlee: 'โดนหมึกแล้วตกใจหนี ตัวเหนียวช้าลง', inkIgnore: 'โดนหมึกแล้วเฉย ๆ แต่ตัวเหนียวเคลื่อนไหวช้าลง', inkEnraged: 'โดนหมึกแล้วดุร้ายกว่าเดิม ระวัง', attacked: 'โดนทำร้าย โหลร้าว',
   // แผนที่
   map: 'แผนที่', mapSub: 'สำรวจแล้ว', close: 'ปิด',
   legend: 'สัญลักษณ์', legShip: 'ยาน', legMe: 'ตัวฉัน', legDeath: 'จุดตายล่าสุด · ของยังอยู่', legOldBody: 'ซากเก่า · ของหายแล้ว', legBag: 'กระเป๋าที่ส่งสัญญาณ',
@@ -107,6 +108,7 @@ const en: Record<StrKey, string> = {
   bodyN: 'Body', ended: 'lost', cloning: 'Ship is replicating a new body', allDropped: 'Everything dropped at your remains', deathMarked: 'Death marked on map',
   gearN: 'gear', itemsN: 'finds', pieces: '', takeFromBody: 'Take items from remains', bodyEmpty: 'Nothing left on these remains', tookFromBody: 'Recovered items from remains', bodySomeLeft: 'Belt full · some items are still on the remains',
   respawned: 'The ship replicated a new body. Choose your gear before departing.', warmNearShip: 'Warming up',
+  inkLabel: 'Ink effect', inkFlee: 'Panics and flees when inked, and slows down', inkIgnore: 'Ignores the ink, but the sticky ink slows it down', inkEnraged: 'Gets even more aggressive when inked. Careful.', attacked: 'Attacked · jar cracked',
   map: 'Map', mapSub: 'Explored', close: 'Close',
   legend: 'LEGEND', legShip: 'Ship', legMe: 'Me', legDeath: 'Last death · items still there', legOldBody: 'Old remains · items gone', legBag: 'Beaconed bag',
   mapNote1: "Bags dropped without a beacon won't show on the map. You'll have to find them yourself.",

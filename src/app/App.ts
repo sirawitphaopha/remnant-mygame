@@ -42,6 +42,7 @@ import { buildTown, type TownLayout } from '../world/town';
 import { Town } from '../render/Town';
 import { Caves } from '../render/Caves';
 import { WorldGround } from './WorldGround';
+import { Animals } from './Animals';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
 export class App {
@@ -89,6 +90,7 @@ export class App {
   readonly town: TownLayout;
   readonly cavesView: Caves;
   readonly worldGround: WorldGround;
+  readonly animals: Animals;
   /** อยู่ลึกในถ้ำแค่ไหน 0 = ข้างนอก 1 = ปลายถ้ำ (หรี่แสงแดดกับแสงฟ้า) */
   caveDepth = 0;
   readonly bodyFx: BodyFx;
@@ -180,6 +182,16 @@ export class App {
       return !!c && c.f >= c.cave.gasFrom && y < c.floor + 4;
     };
     this.shelterAt = (x, y, z) => this.structures.roofOver(x, y, z) || (!!caveAt(this.caves, x, z) && y < this.terrain.heightAt(x, z) - 2);
+    this.animals = new Animals(this.terrain);
+    this.scene.add(this.animals.group);
+    // โดนรุมก็โดนตีได้ทีละครั้ง เว้น 1.5 วินาที มีเวลาหนีหรือยิงหมึก
+    let lastHit = -99;
+    this.animals.onAttack = () => {
+      if (this.elapsed - lastHit < 1.5) return;
+      lastHit = this.elapsed;
+      this.body.hit();
+      if (!this.body.dead) this.hud.toast(`${t('attacked')} · ${t('sealWithGlue')}`, 'danger');
+    };
     this.player = new Player(this.worldGround, this.colliders);
     this.player.place(SPAWN_POINT.x, SPAWN_POINT.z, SPAWN_POINT.heading);
     this.rig = new CameraRig(this.camera);
@@ -216,7 +228,7 @@ export class App {
       onScanned: (target) => this.onScanned(target),
       sealCrack: () => this.body.seal(),
       refillOxygen: () => this.body.refill(),
-      onInk: () => {},
+      onInk: (x, y, z) => { this.animals.ink(x, y, z); },
       sunlit: () => this.skyState.sunHeight > 0.05,
     });
 
@@ -358,6 +370,9 @@ export class App {
     for (const c of this.corpses) if (Math.abs(c.x - p.x) < 30 && Math.abs(c.z - p.z) < 30) test(c.key, 'remains', c.x, c.y + 0.3, c.z);
     for (const b of this.town.buildings) if (Math.abs(b.x - p.x) < 40 && Math.abs(b.z - p.z) < 40) test(b.key, 'building', b.x, b.y + Math.min(b.h, 6) / 2, b.z);
     for (const s of this.cavesView.scannables) if (Math.abs(s.x - p.x) < 30 && Math.abs(s.z - p.z) < 30) test(s.key, s.kind, s.x, s.y, s.z);
+    for (const an of this.animals.scanTargets()) if (Math.abs(an.x - p.x) < 30 && Math.abs(an.z - p.z) < 30) test(an.key, an.kind, an.x, an.y, an.z);
+    const ff = this.animals.nearestFirefly(p.x, p.z);
+    if (ff) test(`firefly-${Math.round(ff.x)}-${Math.round(ff.z)}`, 'firefly', ff.x, ff.y, ff.z);
     const bp = this.town.bridge[0];
     if (bp && Math.abs(bp.x - p.x) < 40 && Math.abs(bp.z - p.z) < 40) test('bridge-0', 'bridge', bp.x, bp.y1, bp.z);
     const found = best as ScanTarget | null;
@@ -643,6 +658,7 @@ export class App {
     this.sun.intensity *= dim;
     this.hemi.intensity *= dim;
     this.cavesView.update(this.elapsed);
+    this.animals.update(dt, p.x, p.y, p.z, this.sky.night > 0.5, this.elapsed);
     // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
     const snap = 4;
     const sx = Math.round(p.x / snap) * snap;

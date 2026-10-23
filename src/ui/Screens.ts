@@ -1,4 +1,5 @@
 import { KINDS, kind as kindOf, type Category, type Kind } from '../core/catalog';
+import { SPECIES_BY_ID } from '../core/animals';
 import { GEAR, buildLoadout, choiceSlots, held, slotKg, type Loadout, type ShipChoice } from '../core/gear';
 import { bagCap, bagContents, carriedKg, carryLimit, contentsKg, isBag } from '../core/inventory';
 import type { ScanLog } from '../core/scanlog';
@@ -39,7 +40,10 @@ function layersHtml(k: Kind, log: ScanLog): string {
   const truth = log.truth(k.id);
   const hasLog = log.log(k.id);
   const dots = [0, 1, 2].map((i) => `<i class="${i < count ? 'on' : ''}"></i>`).join('');
-  return `
+  // สัตว์: ผลของหมึก ต้องสแกนก่อนถึงรู้
+  const sp = SPECIES_BY_ID.get(k.id);
+  const ink = sp && count > 0 ? `<div class="layer"><span class="lt">${t('inkLabel')}</span>${t(sp.ink === 'flee' ? 'inkFlee' : sp.ink === 'enraged' ? 'inkEnraged' : 'inkIgnore')}</div>` : '';
+  return ink + `
     <div class="layer"><span class="lt">${t('layer1')}</span>${esc(L(k.guess))}</div>
     <div class="layer ${truth ? '' : 'locked'}"><span class="lt">${t('layer2')} <span class="dots">${dots}</span></span>${truth ? esc(L(k.truth)) : t('lockTruth')}</div>
     <div class="layer personal ${hasLog ? '' : 'locked'}"><span class="lt">${t('layer3')}</span>${k.log ? (hasLog ? esc(L(k.log)) : t('lockLog')) : t('noLog')}</div>`;

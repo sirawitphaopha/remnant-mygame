@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { busModel, carModel, droppedBagModel, lampModel, mailboxModel, signModel, smallItemModel } from './models/props';
 import { plantGeometry, rockGeometry, treeGeometry } from './models/plants';
 import { HeroModel } from './models/hero';
+import { animalModel } from './models/animals';
 
 /** สร้างโมเดลของชนิดนั้นไว้โชว์ในคอลเลกชัน */
 export function kindModel(kind: string): THREE.Object3D {
@@ -30,6 +31,12 @@ export function kindModel(kind: string): THREE.Object3D {
       return h.root;
     }
     case 'bag': return droppedBagModel();
+    case 'deer': case 'rabbit': case 'fox': case 'crow': case 'eagle': case 'fish': case 'frog': case 'butterfly': case 'owl': case 'wolf': case 'bear': {
+      const a = animalModel(kind);
+      a.animate(0.016, 0, 0);
+      return a.root;
+    }
+    case 'firefly': return new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0xd8ff7a }));
     default:
       return smallItemModel(kind);
   }
