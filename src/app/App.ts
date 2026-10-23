@@ -21,6 +21,8 @@ import { Hud, type MapMarker } from '../ui/Hud';
 import { BigMap } from '../ui/BigMap';
 import { MapImage } from '../ui/MapImage';
 import { armViews, beltViews } from './hudView';
+import { Tools, type ScanTarget } from './Tools';
+import { t } from '../ui/strings';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
 export class App {
@@ -54,6 +56,7 @@ export class App {
   readonly mapImage: MapImage;
   readonly hud: Hud;
   readonly bigMap: BigMap;
+  readonly tools: Tools;
   /** กำลังเล็งหรือสแกน (กล้องซูมชิดไหล่) */
   aiming = false;
   /** น้ำหนักที่แบก ÷ ที่รับได้ (ช่วง 6 ผูกกับกระเป๋า) */
@@ -69,6 +72,8 @@ export class App {
   private fpsFrames = 0;
 
   constructor(private host: HTMLElement, readonly uiRoot: HTMLElement) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const app = this;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -122,6 +127,19 @@ export class App {
     this.hud = new Hud(uiRoot, this.mapImage, this.explore);
     this.bigMap = new BigMap(uiRoot, this.mapImage, this.explore);
     this.bigMap.onClose = () => this.toggleMap(false);
+    this.tools = new Tools({
+      scene: this.scene,
+      hero: this.hero,
+      get loadout() { return app.loadout; },
+      heightAt: (x, z) => this.terrain.heightAt(x, z),
+      toast: (text, kind = '') => this.hud.toast(text, kind),
+      findScanTarget: (o, d) => this.findScanTarget(o, d),
+      onScanned: (target) => this.onScanned(target),
+      sealCrack: () => false,
+      refillOxygen: () => false,
+      onInk: () => {},
+      sunlit: () => this.skyState.sunHeight > 0.05,
+    });
 
     this.setQuality(DEFAULT_QUALITY);
     window.addEventListener('resize', () => this.resize());
@@ -198,6 +216,43 @@ export class App {
     this.renderMs = performance.now() - t;
   }
 
+  /** หมุนลูกกลิ้งเมาส์: แขนหลักถือของช่องถัดไปที่ไม่ว่าง */
+  private cycleMainArm(dir: number): void {
+    const cur = this.loadout.arms[0] ?? -1;
+    for (let k = 1; k <= 9; k++) {
+      const i = (((cur + k * Math.sign(dir)) % 9) + 9) % 9;
+      if (this.loadout.belt[i]) { equipToArm(this.loadout, i); return; }
+    }
+  }
+
+  /** ของที่สแกนได้ในทิศที่มอง · ช่วงนี้มีต้นไม้กับหิน (ช่วง 6 เพิ่มของมนุษย์ ช่วง 9 เพิ่มสัตว์) */
+  findScanTarget(origin: THREE.Vector3, dir: THREE.Vector3): ScanTarget | null {
+    let best: ScanTarget | null = null;
+    let bestCos = 0.975;
+    const p = this.player;
+    const test = (key: string, kind: string, x: number, y: number, z: number) => {
+      const dx = x - origin.x;
+      const dy = y - origin.y;
+      const dz = z - origin.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d > 28 || d < 0.5) return;
+      const c = (dx * dir.x + dy * dir.y + dz * dir.z) / d;
+      if (c > bestCos) { bestCos = c; best = { key, kind, x, y, z }; }
+    };
+    this.vegetation.trees.forEach((set) => set.items.forEach((it, i) => {
+      if (Math.abs(it.x - p.x) < 30 && Math.abs(it.z - p.z) < 30) test(`tree-${set.kind}-${i}`, set.kind, it.x, it.y + 2.5 * it.scale, it.z);
+    }));
+    this.vegetation.rocks.forEach((r, i) => {
+      if (Math.abs(r.x - p.x) < 30 && Math.abs(r.z - p.z) < 30) test(`rock-${i}`, 'rock', r.x, r.y + 0.4 * r.scale, r.z);
+    });
+    return best;
+  }
+
+  /** สแกนเสร็จ (ช่วง 6 ทำข้อความสแกน 3 ชั้น) */
+  onScanned(target: ScanTarget): void {
+    this.hud.toast(`${t('scanSent')}<br><b>${target.kind}</b>`);
+  }
+
   /** เครื่องหมายบนแผนที่ (ช่วง 6 และ 7 เพิ่มซาก กระเป๋า) */
   markers(): MapMarker[] {
     return [{ kind: 'ship', x: SHIP.x, z: SHIP.z }];
@@ -223,6 +278,7 @@ export class App {
       return;
     }
     for (let i = 0; i < 9; i++) if (this.input.wasPressed(`Digit${i + 1}`)) equipToArm(this.loadout, i);
+    if (this.input.wheel !== 0) this.cycleMainArm(this.input.wheel);
     WIND.uTime.value = this.elapsed;
     this.water.update(dt);
     this.gameTime += dt * this.timeScale;
@@ -247,12 +303,13 @@ export class App {
       loadRatio: this.loadRatio,
     });
     if (inp.wasPressed('KeyV')) this.rig.swapShoulder();
+    this.tools.update(dt, (b) => inp.held(b), (b) => inp.pressedAny(b), this.camera.position, this.rig.viewDir());
 
     const p = this.player;
     this.hero.root.position.set(p.x, p.y, p.z);
     this.hero.root.rotation.y = p.heading;
     this.hero.pose(dt, p.sliding ? 'air' : p.state, p.stepPhase, p.speed, p.running, this.elapsed);
-    this.rig.update(dt, p, { heightAt: (x, z) => this.terrain.heightAt(x, z), colliders: this.colliders }, this.aiming, this.elapsed - inp.lastMouseMove);
+    this.rig.update(dt, p, { heightAt: (x, z) => this.terrain.heightAt(x, z), colliders: this.colliders }, this.aiming || this.tools.aiming, this.elapsed - inp.lastMouseMove);
     this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
     this.vegetation.update(p.x, p.z);
     this.grass.update(p.x, p.z);
@@ -291,8 +348,10 @@ export class App {
       arms: armViews(this.loadout, name),
       belt: beltViews(this.loadout, name),
       markers: this.markers(),
-      prompt: null,
-      reticle: this.aiming,
+      prompt: this.tools.scanning
+        ? { key: t('keyLeft'), text: this.tools.scanProgress < 0 ? t('scanNothing') : `${t('scanning')} ${Math.round(this.tools.scanProgress * 100)}%` }
+        : null,
+      reticle: this.aiming || this.tools.aiming,
     }, this.elapsed);
   }
 

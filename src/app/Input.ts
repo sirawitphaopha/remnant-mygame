@@ -62,6 +62,21 @@ export class Input {
     this.wheel = 0;
   }
 
+  /** ใช้ตอนทดสอบเท่านั้น จำลองการกดปุ่มเมาส์ (0 ซ้าย 2 ขวา) */
+  simulateMouse(button: number, isDown: boolean): void {
+    if (isDown) { if (!this.mouseDown.has(button)) this.mousePressed.add(button); this.mouseDown.add(button); }
+    else this.mouseDown.delete(button);
+  }
+
+  /** ปุ่มแบบรวม: 'mouse0' 'mouse2' หรือรหัสปุ่มคีย์บอร์ด */
+  held(b: string): boolean {
+    return b.startsWith('mouse') ? this.isMouseDown(Number(b.slice(5))) : this.isDown(b);
+  }
+
+  pressedAny(b: string): boolean {
+    return b.startsWith('mouse') ? this.wasMousePressed(Number(b.slice(5))) : this.wasPressed(b);
+  }
+
   /** ใช้ตอนทดสอบเท่านั้น จำลองการกดปุ่ม */
   simulate(code: string, isDown: boolean): void {
     if (isDown) { if (!this.down.has(code)) this.pressed.add(code); this.down.add(code); }

@@ -20,6 +20,11 @@ const th = {
   short_scanner: 'สแกน', short_flashlight: 'ไฟฉาย', short_inkGun: 'ปืนหมึก', short_glueGun: 'ปืนกาว', short_climber: 'ที่ปีน', short_oxygenTank: 'ออกซิเจน', short_bag: 'กระเป๋า',
   on: 'เปิดอยู่', off: 'ปิดอยู่',
   ink: 'หมึก', glue: 'กาว', tanks: 'ถัง', charge: 'แบต',
+  // ใช้อุปกรณ์
+  scanning: 'กำลังสแกน', scanNothing: 'ไม่มีอะไรให้สแกนตรงนี้', scanSent: 'ส่งผลสแกนเข้ายานแล้ว',
+  lightEmpty: 'แบตไฟฉายหมด รอแดดชาร์จ', noInk: 'หมึกหมด', noGlue: 'กาวหมด', noCracks: 'โหลไม่มีรอยร้าว', sealed: 'อุดรอยร้าวแล้ว',
+  oxygenFull: 'ออกซิเจนในโหลเต็มอยู่แล้ว', oxygenRefilled: 'เติมออกซิเจนในโหลแล้ว', noTanks: 'ถังออกซิเจนหมด',
+  bagHint: 'กด Tab หรือ I เพื่อเปิดกระเป๋า', charging: 'กำลังชาร์จแดด',
   // แผนที่
   map: 'แผนที่', mapSub: 'สำรวจแล้ว', close: 'ปิด',
   legend: 'สัญลักษณ์', legShip: 'ยาน', legMe: 'ตัวฉัน', legDeath: 'จุดตายล่าสุด · ของยังอยู่', legOldBody: 'ซากเก่า · ของหายแล้ว', legBag: 'กระเป๋าที่ส่งสัญญาณ',
@@ -47,6 +52,10 @@ const en: Record<StrKey, string> = {
   short_scanner: 'Scan', short_flashlight: 'Light', short_inkGun: 'Ink', short_glueGun: 'Glue', short_climber: 'Climb', short_oxygenTank: 'Oxygen', short_bag: 'Bag',
   on: 'On', off: 'Off',
   ink: 'Ink', glue: 'Glue', tanks: 'tanks', charge: 'Battery',
+  scanning: 'Scanning', scanNothing: 'Nothing to scan here', scanSent: 'Scan uploaded to ship',
+  lightEmpty: 'Flashlight battery empty. Wait for sunlight', noInk: 'Out of ink', noGlue: 'Out of glue', noCracks: 'The jar has no cracks', sealed: 'Crack sealed',
+  oxygenFull: 'Jar oxygen is already full', oxygenRefilled: 'Jar oxygen refilled', noTanks: 'No oxygen tanks left',
+  bagHint: 'Press Tab or I to open your bag', charging: 'Solar charging',
   map: 'Map', mapSub: 'Explored', close: 'Close',
   legend: 'LEGEND', legShip: 'Ship', legMe: 'Me', legDeath: 'Last death · items still there', legOldBody: 'Old remains · items gone', legBag: 'Beaconed bag',
   mapNote1: "Bags dropped without a beacon won't show on the map. You'll have to find them yourself.",
