@@ -5,6 +5,8 @@ import { DEBRIS_KINDS, PLANT_KINDS, scatterDebris, scatterPlants, scatterRocks, 
 import type { Terrain } from '../world/Terrain';
 import { assemble, jitter, type Part } from './models/build';
 import { plantGeometry, rockGeometry } from './models/plants';
+import { shrubModel } from './models/shrubs';
+import { SHRUB_IDS } from '../world/shrubs';
 import { leafTexture, treeModel, type LeafStyle, type TreeLod } from './models/trees';
 import { addWind } from './wind';
 
@@ -66,6 +68,8 @@ export class Vegetation {
   private rockMeshes: { mesh: THREE.InstancedMesh; items: Placed[] }[] = [];
   private debrisMeshes = new Map<DebrisKind, THREE.InstancedMesh>();
   private plantMeshes = new Map<PlantKind, THREE.InstancedMesh>();
+  /** พุ่มไม้ 6 ชนิด กิ่งกับใบแยกกัน (ใบเป็นแผ่นภาพโปร่งใส) */
+  private shrubMeshes: { wood: THREE.InstancedMesh; leaves: THREE.InstancedMesh }[] = [];
   private lastX = Infinity;
   private lastZ = Infinity;
   private lastPlantX = Infinity;
@@ -154,7 +158,21 @@ export class Vegetation {
 
     const plantMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
     addWind(plantMat, 0.06, 0.4, true, 1.6);
+    // พุ่มไม้หลายชนิด (เดิมก้อนกลมสามก้อนชนิดเดียว)
+    for (const id of SHRUB_IDS) {
+      const model = shrubModel(id);
+      const wood = new THREE.InstancedMesh(model.wood, plantMat, 3000);
+      const leaves = new THREE.InstancedMesh(model.leaves, leafMat(model.style).mat, 3000);
+      for (const m of [wood, leaves]) {
+        m.count = 0;
+        m.frustumCulled = false;
+        m.receiveShadow = true;
+        this.group.add(m);
+      }
+      this.shrubMeshes.push({ wood, leaves });
+    }
     for (const kind of PLANT_KINDS) {
+      if (kind === 'bush') continue;
       const mesh = new THREE.InstancedMesh(plantGeometry(kind), plantMat, 9000);
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -233,7 +251,21 @@ export class Vegetation {
       this.lastPlantZ = z;
       const sets = scatterPlants(this.terrain, x, z, this.q.plantRadius);
       this.plantsNow = sets;
+      const used = this.shrubMeshes.map(() => 0);
+      for (const p of sets.bush) {
+        const s = this.shrubMeshes[p.variant ?? 0];
+        const k = used[p.variant ?? 0];
+        if (!s || k >= s.wood.instanceMatrix.count) continue;
+        setInstance(s.wood, k, p, 0.03);
+        setInstance(s.leaves, k, p, 0.03);
+        used[p.variant ?? 0]++;
+      }
+      this.shrubMeshes.forEach((s, i) => {
+        s.wood.count = s.leaves.count = used[i];
+        s.wood.instanceMatrix.needsUpdate = s.leaves.instanceMatrix.needsUpdate = true;
+      });
       for (const kind of PLANT_KINDS) {
+        if (kind === 'bush') continue;
         const mesh = this.plantMeshes.get(kind)!;
         const items = sets[kind];
         const n = Math.min(items.length, mesh.instanceMatrix.count);

@@ -395,7 +395,21 @@ export function treeModel(kind: TreeKind, lod: TreeLod): TreeModel {
   const leafHex = sp ? sp.leaf : [0x555555, 0x555555];
   const rand = rng(kind.length * 977 + kind.charCodeAt(0) * 31 + (lod === 'near' ? 1 : lod === 'mid' ? 2 : 3));
   let model: TreeModel;
-  if (lod === 'far' || lod === 'distant') {
+  if (lod === 'far') {
+    // ระดับไกล (ราว 180 ถึง 420 ม.) ลำต้นทึบ พุ่มเป็นแผ่นใบใหญ่จำนวนน้อย ขอบพุ่มขรุขระเหมือนใบจริง
+    // (เดิมเป็นก้อนทึบกลม พี่กันทักว่าเห็นพุ่มเป็นก้อนกลมเขียว ๆ)
+    let solidColor = leafHex[0];
+    if (sp?.bloom) solidColor = new THREE.Color(sp.bloom).lerp(new THREE.Color(leafHex[0]), 0.35).getHex();
+    const solid = form.solid('far', solidColor);
+    const trunk = solid.filter((p) => !p.sway);
+    const leafCols = (kind === 'maple' ? [0xa8541c, 0xc8862a, 0x6a7a2a] : leafHex).map((h) => new THREE.Color(h));
+    const cards = form.cards('mid', rand, leafCols.length > 2 ? [leafCols[0], leafCols[2]] : leafCols, sp?.bloom ? new THREE.Color(sp.bloom) : null)
+      .filter((_, i) => i % 2 === 0)
+      .map((c) => ({ ...c, size: c.size * 1.35 }));
+    model = cards.length
+      ? { wood: assemble(trunk.length ? trunk : solid), leaves: cardsGeometry(cards, rand), style: form.style }
+      : { wood: assemble(solid), leaves: null, style: form.style };
+  } else if (lod === 'distant') {
     // ระดับไกลเป็นรูปทึบ สีใบผสมดอก (ไกลยังเห็นต้นสีชมพูม่วงได้)
     let solidColor = leafHex[0];
     if (sp?.bloom) solidColor = new THREE.Color(sp.bloom).lerp(new THREE.Color(leafHex[0]), 0.35).getHex();

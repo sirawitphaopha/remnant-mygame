@@ -3,6 +3,7 @@ import { CAVES, REGIONS, RIVER, RIVER_WIDTH, ROAD_WIDTH, SHIP, TOWN, distToPolyl
 import { BIOME, type BiomeId } from './terrainGen';
 import { ALL_TREE_KINDS, ORCHARD_ROWS, SPECIES_BY_ID, deadKindOf, pickSpecies, type TreeKind } from './trees';
 import { Simplex2, hash2 } from './noise';
+import { pickShrub } from './shrubs';
 import { smooth, type Terrain } from './Terrain';
 
 export type { TreeKind } from './trees';
@@ -14,6 +15,8 @@ export interface Placed {
   /** หมุนรอบแกนตั้ง */
   rot: number;
   scale: number;
+  /** ชนิดย่อย (พุ่มไม้: ลำดับใน world/shrubs.ts SHRUB_IDS) */
+  variant?: number;
 }
 
 export interface TreeSet {
@@ -223,7 +226,7 @@ export function scatterPlants(t: Terrain, cx: number, cz: number, radius: number
       let kind: PlantKind;
       if (dens > 0.55) kind = pick < 0.55 ? 'fern' : pick < 0.63 ? 'moss' : pick < 0.78 ? 'mushroom' : 'bush';
       else kind = pick < 0.5 ? 'flower' : pick < 0.75 ? 'bush' : pick < 0.97 ? 'fern' : 'moss';
-      out[kind].push({ x, y: t.heightAt(x, z), z, rot: hash2(i, j, 25) * Math.PI * 2, scale: 0.6 + 0.8 * hash2(i, j, 26) });
+      out[kind].push({ x, y: t.heightAt(x, z), z, rot: hash2(i, j, 25) * Math.PI * 2, scale: 0.6 + 0.8 * hash2(i, j, 26), variant: kind === 'bush' ? pickShrub(b, hash2(i, j, 27)) : undefined });
     }
   }
   return out;
