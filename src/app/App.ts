@@ -51,6 +51,7 @@ import { NatureAudio, type Surface } from '../audio/NatureAudio';
 import { clearSave, readOldSave, readSave, readSettings, storedSavedAt, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
 import { SettingsScreen, TitleScreen } from '../ui/Menus';
 import { forestDensity } from '../world/scatter';
+import { grassHeightAt } from '../world/flowers';
 import { scanKindOf, trunkRadius } from '../world/trees';
 import { LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from '../world/layout';
 
@@ -200,7 +201,7 @@ export class App {
     const inBuilding = (x: number, z: number) => this.town.buildings.some((b) => Math.abs(x - b.x) < b.w / 2 + 6 && Math.abs(z - b.z) < b.d / 2 + 6 && Math.hypot(x - b.x, z - b.z) < Math.hypot(b.w, b.d) / 2 + 2);
     this.vegetation = new Vegetation(this.terrain, this.q, inBuilding);
     this.scene.add(this.vegetation.group);
-    this.grass = new Grass(this.terrain, this.terrainMesh, this.q);
+    this.grass = new Grass(this.terrain, this.terrainMesh, this.q, inBuilding);
     this.scene.add(this.grass.mesh);
     this.loadMs = Math.round(performance.now() - t0);
 
@@ -608,6 +609,7 @@ export class App {
     this.audio.update(dt, {
       night: this.sky.night,
       forest: forestDensity(this.terrain, p.x, p.z),
+      field: Math.min(1, Math.max(0, (grassHeightAt(this.terrain, p.x, p.z, 0.5) - 0.3) / 0.7)),
       waterDist: Math.max(0, waterDist),
       cave: this.caveDepth,
       underwater: p.underwater,
@@ -708,6 +710,11 @@ export class App {
       test(pp.prop.key, pp.prop.kind, pp.prop.x, pp.y + (H[pp.prop.kind] ?? 0.12), pp.prop.z);
     }
     for (const c of this.corpses) if (Math.abs(c.x - p.x) < 30 && Math.abs(c.z - p.z) < 30) test(c.key, 'remains', c.x, c.y + 0.3, c.z);
+    // ดอกไม้ เฟิร์น เห็ด สแกนได้ (เดิมอยู่ในคอลเลกชันแต่ไม่มีทางสแกน หมวดพืชไม่มีวันครบ) · ช่วง 12 แยกข้อความสแกนดอกไม้ทีละชนิด
+    for (const f of this.grass.flowersNear(p.x, p.z, 14)) test(`flower-${f.kind}@${Math.round(f.x * 2)},${Math.round(f.z * 2)}`, 'flower', f.x, f.y + f.scale * 0.8, f.z);
+    for (const kind of ['fern', 'mushroom', 'flower'] as const) {
+      for (const pl of this.vegetation.plantsNow[kind]) if (Math.abs(pl.x - p.x) < 14 && Math.abs(pl.z - p.z) < 14) test(`${kind}@${Math.round(pl.x * 2)},${Math.round(pl.z * 2)}`, kind, pl.x, pl.y + 0.3 * pl.scale, pl.z);
+    }
     for (const b of this.town.buildings) if (Math.abs(b.x - p.x) < 40 && Math.abs(b.z - p.z) < 40) test(b.key, 'building', b.x, b.y + Math.min(b.h, 6) / 2, b.z);
     for (const s of this.cavesView.scannables) if (Math.abs(s.x - p.x) < 30 && Math.abs(s.z - p.z) < 30) test(s.key, s.kind, s.x, s.y, s.z);
     for (const an of this.animals.scanTargets()) if (Math.abs(an.x - p.x) < 30 && Math.abs(an.z - p.z) < 30) test(an.key, an.kind, an.x, an.y, an.z);
@@ -1034,7 +1041,7 @@ export class App {
     this.rig.update(dt, p, this.camWorld, this.aiming || this.tools.aiming, this.elapsed - inp.lastMouseMove);
     this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
     this.vegetation.update(p.x, p.z);
-    this.grass.update(p.x, p.z);
+    this.grass.update(p.x, p.z, p.y);
     this.cullFar(p.x, p.z);
 
     this.explore.reveal(p.x, p.z);

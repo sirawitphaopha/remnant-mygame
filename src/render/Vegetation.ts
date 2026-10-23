@@ -70,6 +70,8 @@ export class Vegetation {
   private lastZ = Infinity;
   private lastPlantX = Infinity;
   private lastPlantZ = Infinity;
+  /** พืชเล็กรอบตัวตอนนี้ (ใช้หาเป้าสแกน) */
+  plantsNow: Record<PlantKind, Placed[]> = { fern: [], flower: [], bush: [], mushroom: [], moss: [] };
 
   constructor(private terrain: Terrain, private q: QualityPreset, blocked: (x: number, z: number) => boolean = () => false) {
     this.trees = scatterTrees(terrain, blocked);
@@ -230,6 +232,7 @@ export class Vegetation {
       this.lastPlantX = x;
       this.lastPlantZ = z;
       const sets = scatterPlants(this.terrain, x, z, this.q.plantRadius);
+      this.plantsNow = sets;
       for (const kind of PLANT_KINDS) {
         const mesh = this.plantMeshes.get(kind)!;
         const items = sets[kind];
