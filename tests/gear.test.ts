@@ -31,3 +31,18 @@ describe('อุปกรณ์และ 4 แขน', () => {
     expect(held(l, 0)).toMatchObject({ id: 'scanner' });
   });
 });
+
+import { buildLoadout, choiceSlots, starterChoice } from '../src/core/gear';
+describe('หน้ายาน เลือกของก่อนออกเดินทาง', () => {
+  it('แพ็กเกจเริ่มต้นได้ของเหมือน starterPack', () => {
+    const l = buildLoadout(starterChoice());
+    expect(l.belt.filter(Boolean)).toHaveLength(7);
+    expect(choiceSlots(starterChoice())).toBe(7);
+    expect(l.arms.every((x) => x !== null)).toBe(true);
+  });
+  it('จำนวนหมึก กาว ถัง ไม่เกินที่รับได้', () => {
+    const l = buildLoadout({ ...starterChoice(), ink: 99, glue: 99, tanks: 9 });
+    expect(l.belt.find((s) => s && s.kind === 'gear' && s.id === 'inkGun')).toMatchObject({ amount: 10 });
+    expect(l.belt.find((s) => s && s.kind === 'gear' && s.id === 'oxygenTank')).toMatchObject({ amount: 2 });
+  });
+});

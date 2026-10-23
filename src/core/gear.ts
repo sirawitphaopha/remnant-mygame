@@ -115,3 +115,45 @@ export function findGear(l: Loadout, id: GearId): GearSlot | null {
   for (const s of l.belt) if (s && s.kind === 'gear' && s.id === id) return s;
   return null;
 }
+
+/** ที่เลือกในหน้ายานก่อนออกเดินทาง · ยานจำลองได้ไม่จำกัด */
+export interface ShipChoice {
+  scanner: boolean;
+  flashlight: boolean;
+  inkGun: boolean;
+  ink: number;
+  glueGun: boolean;
+  glue: number;
+  climber: boolean;
+  tanks: number;
+  bags: BagSize[];
+}
+
+export function starterChoice(): ShipChoice {
+  return { scanner: true, flashlight: true, inkGun: true, ink: 5, glueGun: true, glue: 3, climber: true, tanks: 1, bags: ['medium'] };
+}
+
+/** จำนวนช่องที่ของที่เลือกจะใช้ในแถบล่าง */
+export function choiceSlots(c: ShipChoice): number {
+  return [c.scanner, c.flashlight, c.inkGun, c.glueGun, c.climber, c.tanks > 0].filter(Boolean).length + c.bags.length;
+}
+
+/** สร้างของที่จะพกจากที่เลือก · เรียงอุปกรณ์ก่อน กระเป๋าท้ายสุด · แขนถืออุปกรณ์ 4 ชิ้นแรก */
+export function buildLoadout(c: ShipChoice): Loadout {
+  const belt: Slot[] = [];
+  if (c.scanner) belt.push({ kind: 'gear', id: 'scanner' });
+  if (c.flashlight) belt.push({ kind: 'gear', id: 'flashlight', charge: 1, on: false });
+  if (c.inkGun) belt.push({ kind: 'gear', id: 'inkGun', amount: Math.max(0, Math.min(GEAR.inkGun.max, c.ink)) });
+  if (c.glueGun) belt.push({ kind: 'gear', id: 'glueGun', amount: Math.max(0, Math.min(GEAR.glueGun.max, c.glue)) });
+  if (c.climber) belt.push({ kind: 'gear', id: 'climber' });
+  if (c.tanks > 0) belt.push({ kind: 'gear', id: 'oxygenTank', amount: Math.min(GEAR.oxygenTank.max, c.tanks) });
+  for (const b of c.bags) belt.push({ kind: 'gear', id: 'bag', bag: b });
+  while (belt.length < 9) belt.push(null);
+  belt.length = 9;
+  const arms: (number | null)[] = [null, null, null, null];
+  let a = 0;
+  belt.forEach((s, i) => {
+    if (a < 4 && s && s.kind === 'gear' && s.id !== 'bag' && s.id !== 'climber' && s.id !== 'oxygenTank') arms[a++] = i;
+  });
+  return { belt, arms };
+}

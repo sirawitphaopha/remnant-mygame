@@ -23,6 +23,15 @@ import { MapImage } from '../ui/MapImage';
 import { armViews, beltViews } from './hudView';
 import { Tools, type ScanTarget } from './Tools';
 import { t } from '../ui/strings';
+import { kind as kindOf } from '../core/catalog';
+import { ScanLog } from '../core/scanlog';
+import { buildLoadout, starterChoice, type ShipChoice } from '../core/gear';
+import { depositAll, dropBag, loadRatio as loadRatioOf, nestBag, pickUp, takeBag, unnestBag, type NestedBag } from '../core/inventory';
+import { placeProps } from '../world/props';
+import { Props } from '../render/Props';
+import { ModelViewer } from '../render/ModelViewer';
+import { droppedBagModel } from '../render/models/props';
+import { InventoryScreen, ScanCard, ShipScreen, shownName } from '../ui/Screens';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
 export class App {
@@ -57,6 +66,18 @@ export class App {
   readonly hud: Hud;
   readonly bigMap: BigMap;
   readonly tools: Tools;
+  readonly props: Props;
+  readonly scanLog = new ScanLog();
+  readonly scanCard: ScanCard;
+  readonly viewer = new ModelViewer();
+  readonly inventory: InventoryScreen;
+  readonly shipScreen: ShipScreen;
+  shipChoice: ShipChoice = starterChoice();
+  /** กระเป๋าที่วางไว้ในโลก */
+  readonly droppedBags: { id: number; x: number; y: number; z: number; bag: NestedBag; beacon: boolean; object: THREE.Object3D }[] = [];
+  private bagSeq = 0;
+  /** ป้ายกดปุ่มตอนนี้ (เก็บของ เข้ายาน หยิบกระเป๋า) */
+  private interact: { key: string; text: string; run: () => void; alt?: { code: string; run: () => void } } | null = null;
   /** กำลังเล็งหรือสแกน (กล้องซูมชิดไหล่) */
   aiming = false;
   /** น้ำหนักที่แบก ÷ ที่รับได้ (ช่วง 6 ผูกกับกระเป๋า) */
@@ -123,10 +144,24 @@ export class App {
     this.rig = new CameraRig(this.camera);
     this.rig.snap(this.player);
 
+    this.props = new Props(placeProps(), (x, z) => this.terrain.heightAt(x, z), this.colliders, { x: SHIP.x, z: SHIP.z, y: this.terrain.heightAt(SHIP.x, SHIP.z) });
+    this.scene.add(this.props.group);
     this.mapImage = new MapImage(this.terrain);
     this.hud = new Hud(uiRoot, this.mapImage, this.explore);
     this.bigMap = new BigMap(uiRoot, this.mapImage, this.explore);
     this.bigMap.onClose = () => this.toggleMap(false);
+    this.scanCard = new ScanCard(uiRoot);
+    this.inventory = new InventoryScreen(uiRoot, this.viewer, {
+      equip: (slot, arm) => equipToArm(this.loadout, slot, arm),
+      dropBag: (slot) => this.dropBagAt(slot),
+      nestBag: (slot) => {
+        const into = this.loadout.belt.findIndex((x, i) => i !== slot && x?.kind === 'gear' && x.id === 'bag');
+        if (into >= 0) nestBag(this.loadout, slot, into);
+      },
+      unnestBag: (slot, i) => unnestBag(this.loadout, slot, i),
+      close: () => this.closeScreens(),
+    });
+    this.shipScreen = new ShipScreen(uiRoot, { depart: (c) => this.depart(c) });
     this.tools = new Tools({
       scene: this.scene,
       hero: this.hero,
@@ -245,17 +280,117 @@ export class App {
     this.vegetation.rocks.forEach((r, i) => {
       if (Math.abs(r.x - p.x) < 30 && Math.abs(r.z - p.z) < 30) test(`rock-${i}`, 'rock', r.x, r.y + 0.4 * r.scale, r.z);
     });
-    return best;
+    const H: Record<string, number> = { car: 1, bus: 1.6, lamp: 4, mailbox: 1, sign: 2.6 };
+    for (const pp of this.props.all) {
+      if (pp.taken || Math.abs(pp.prop.x - p.x) > 30 || Math.abs(pp.prop.z - p.z) > 30) continue;
+      test(pp.prop.key, pp.prop.kind, pp.prop.x, pp.y + (H[pp.prop.kind] ?? 0.12), pp.prop.z);
+    }
+    const found = best as ScanTarget | null;
+    if (found) found.special = this.props.byKey.get(found.key)?.prop.special ?? false;
+    return found;
   }
 
   /** สแกนเสร็จ (ช่วง 6 ทำข้อความสแกน 3 ชั้น) */
   onScanned(target: ScanTarget): void {
-    this.hud.toast(`${t('scanSent')}<br><b>${target.kind}</b>`);
+    const r = this.scanLog.scan(target.kind, target.key, target.special);
+    this.scanCard.show(target.kind, this.scanLog, r.firstTime || r.newTruth || r.newLog, this.elapsed);
+    const k = kindOf(target.kind);
+    this.hud.toast(`${t('scanSent')}<br><b>${k ? shownName(k, this.scanLog.truth(target.kind)) : target.kind}</b>`);
+  }
+
+  private openInventory(tab: 'bag' | 'collection'): void {
+    this.input.unlock();
+    this.inventory.show(tab, { loadout: this.loadout, log: this.scanLog, body: this.bodyView() });
+  }
+
+  /** สภาพร่างกาย (ช่วง 7 ผูกค่าจริง) */
+  bodyView(): { cracks: number; oxygen: number; cold: boolean } {
+    return { cracks: 0, oxygen: 1, cold: false };
+  }
+
+  closeScreens(): void {
+    this.inventory.hide();
+    this.shipScreen.hide();
+  }
+
+  /** ป้ายกดปุ่ม: ของใกล้ตัวที่เก็บได้ ยาน กระเป๋าที่วางไว้ */
+  private updateInteract(): void {
+    const p = this.player;
+    this.interact = null;
+    if (Math.hypot(p.x - SHIP.x, p.z - SHIP.z) < 9) {
+      this.interact = { key: 'E', text: t('enterShip'), run: () => this.enterShip() };
+      return;
+    }
+    for (const b of this.droppedBags) {
+      if (Math.hypot(b.x - p.x, b.z - p.z) < 1.8) {
+        this.interact = {
+          key: 'E',
+          text: `${t('takeBag')} · G ${t('beacon')}`,
+          run: () => {
+            if (!takeBag(this.loadout, b.bag)) { this.hud.toast(t('bagFull'), 'warn'); return; }
+            this.scene.remove(b.object);
+            this.droppedBags.splice(this.droppedBags.indexOf(b), 1);
+          },
+          alt: { code: 'KeyG', run: () => { b.beacon = true; this.hud.toast(t('beaconOn')); } },
+        };
+        return;
+      }
+    }
+    let best: { prop: { kind: string; key: string; x: number; z: number } } | null = null;
+    let bd = 2.0;
+    for (const pp of this.props.all) {
+      if (pp.taken) continue;
+      const k = kindOf(pp.prop.kind);
+      if (!k?.small) continue;
+      const d = Math.hypot(pp.prop.x - p.x, pp.prop.z - p.z);
+      if (d < bd) { bd = d; best = pp; }
+    }
+    if (best) {
+      const k = kindOf(best.prop.kind)!;
+      const key = best.prop.key;
+      this.interact = {
+        key: 'E',
+        text: `${t('pick')} ${shownName(k, this.scanLog.truth(k.id))} · ${k.kg!.toFixed(2)} ${t('kg')}`,
+        run: () => {
+          const r = pickUp(this.loadout, { itemId: k.id, kg: k.kg! });
+          if (r === 'full') { this.hud.toast(t('bagFull'), 'warn'); return; }
+          this.props.take(key);
+          this.hud.toast(r === 'bag' ? t('pickedBag') : t('pickedHand'));
+        },
+      };
+    }
+  }
+
+  private dropBagAt(slot: number): void {
+    const bag = dropBag(this.loadout, slot);
+    if (!bag) return;
+    const p = this.player;
+    const object = droppedBagModel();
+    const x = p.x - Math.sin(p.heading) * 0.8;
+    const z = p.z - Math.cos(p.heading) * 0.8;
+    const y = this.terrain.heightAt(x, z);
+    object.position.set(x, y, z);
+    this.scene.add(object);
+    this.droppedBags.push({ id: this.bagSeq++, x, y, z, bag, beacon: false, object });
+    this.hud.toast(t('bagDropped'));
+  }
+
+  enterShip(): void {
+    const items = depositAll(this.loadout);
+    for (const it of items) this.scanLog.deposit(it.itemId);
+    this.input.unlock();
+    this.shipScreen.show(this.shipChoice, items.length ? `${t('depositedN')} ${items.length}` : t('nothingDeposited'));
+  }
+
+  private depart(c: ShipChoice): void {
+    this.shipChoice = c;
+    this.loadout = buildLoadout(c);
+    this.closeScreens();
   }
 
   /** เครื่องหมายบนแผนที่ (ช่วง 6 และ 7 เพิ่มซาก กระเป๋า) */
   markers(): MapMarker[] {
-    return [{ kind: 'ship', x: SHIP.x, z: SHIP.z }];
+    return [{ kind: 'ship', x: SHIP.x, z: SHIP.z }, ...this.droppedBags.filter((b) => b.beacon).map((b) => ({ kind: 'bag' as const, x: b.x, z: b.z }))];
   }
 
   toggleMap(open = !this.bigMap.open): void {
@@ -270,7 +405,18 @@ export class App {
   private update(dt: number): void {
     this.elapsed += dt;
     this.input.setTime(this.elapsed);
-    if (this.input.wasPressed('KeyM')) this.toggleMap();
+    if (this.input.wasPressed('KeyM') && !this.inventory.open && !this.shipScreen.open) this.toggleMap();
+    if ((this.input.wasPressed('Tab') || this.input.wasPressed('KeyI')) && !this.shipScreen.open && !this.bigMap.open) {
+      if (this.inventory.open) this.closeScreens();
+      else this.openInventory('bag');
+      this.input.endFrame();
+      return;
+    }
+    if (this.inventory.open || this.shipScreen.open) {
+      if (this.input.wasPressed('Escape')) this.closeScreens();
+      this.input.endFrame();
+      return;
+    }
     if (this.bigMap.open) {
       // เปิดแผนที่อยู่ เกมหยุดเดินเวลา
       if (this.input.wasPressed('Escape')) this.toggleMap(false);
@@ -300,7 +446,7 @@ export class App {
       run: inp.isDown('ShiftLeft') || inp.isDown('ShiftRight'),
       jump: inp.wasPressed('Space'),
       climbGear: holding(this.loadout, 'climber') !== null,
-      loadRatio: this.loadRatio,
+      loadRatio: loadRatioOf(this.loadout),
     });
     if (inp.wasPressed('KeyV')) this.rig.swapShoulder();
     this.tools.update(dt, (b) => inp.held(b), (b) => inp.pressedAny(b), this.camera.position, this.rig.viewDir());
@@ -315,6 +461,14 @@ export class App {
     this.grass.update(p.x, p.z);
 
     this.explore.reveal(p.x, p.z);
+    this.updateInteract();
+    if (this.interact && inp.wasPressed('KeyE')) this.interact.run();
+    else if (this.interact?.alt && inp.wasPressed(this.interact.alt.code)) this.interact.alt.run();
+    this.scanCard.update(this.elapsed);
+    for (const b of this.droppedBags) {
+      const bc = b.object.getObjectByName('beacon');
+      if (bc) bc.visible = b.beacon && Math.sin(this.elapsed * 4) > -0.2;
+    }
     this.updateHud();
     this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog);
     // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
@@ -335,7 +489,10 @@ export class App {
   private updateHud(): void {
     const p = this.player;
     const light = findGear(this.loadout, 'flashlight');
-    const name = (id: string) => id;
+    const name = (id: string) => {
+      const k = kindOf(id);
+      return k ? shownName(k, this.scanLog.truth(id)) : id;
+    };
     this.hud.update({
       yaw: this.rig.yaw,
       x: p.x,
@@ -350,7 +507,7 @@ export class App {
       markers: this.markers(),
       prompt: this.tools.scanning
         ? { key: t('keyLeft'), text: this.tools.scanProgress < 0 ? t('scanNothing') : `${t('scanning')} ${Math.round(this.tools.scanProgress * 100)}%` }
-        : null,
+        : this.interact ? { key: this.interact.key, text: this.interact.text } : null,
       reticle: this.aiming || this.tools.aiming,
     }, this.elapsed);
   }

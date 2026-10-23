@@ -13,6 +13,8 @@ export interface ScanTarget {
   x: number;
   y: number;
   z: number;
+  /** ชิ้นพิเศษ ปลดล็อกบันทึกส่วนตัว */
+  special?: boolean;
 }
 
 /** สิ่งที่อุปกรณ์ต้องใช้จากเกม (ต่อเข้ากับร่างกาย สแกน สัตว์ ในช่วงถัดไป) */
