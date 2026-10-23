@@ -77,7 +77,7 @@
 .reticle[hidden] { display: none; }
 
 /* ===== หน้าโฮโลแกรม (แผนที่ กระเป๋า ยาน ตั้งค่า) ===== */
-.overlay { position: fixed; inset: 0; background: rgba(2,10,12,.72); backdrop-filter: blur(3px); pointer-events: auto; display: grid; place-items: center; font-family: var(--font-ui); color: var(--ink); }
+.overlay { position: fixed; inset: 0; z-index: 2; background: rgba(2,10,12,.72); backdrop-filter: blur(3px); pointer-events: auto; display: grid; place-items: center; font-family: var(--font-ui); color: var(--ink); }
 .overlay[hidden] { display: none; }
 .holo { position: relative; width: min(1240px, 94vw); height: min(720px, 90vh); border-radius: 10px; border: 1px solid var(--holo-line);
   background: repeating-linear-gradient(0deg, rgba(111,240,224,.035) 0 1px, transparent 1px 4px), linear-gradient(160deg, rgba(10,40,42,.82), rgba(4,18,22,.88));
@@ -115,7 +115,7 @@
 .tab:focus-visible, .gslot:focus-visible, .citem:focus-visible, .arm:focus-visible, .slot:focus-visible, .stock-main:focus-visible { outline: 2px solid var(--holo); outline-offset: 2px; }
 .tabs.small .tab { font-size: 12px; padding: 4px 10px; }
 .cols { display: grid; gap: 18px; flex: 1; min-height: 0; }
-.cols > .panel { overflow: auto; }
+.cols > .panel { overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(111,240,224,.35) transparent; }
 .inv-bag { grid-template-columns: 1.2fr 1fr .9fr; }
 .inv-coll { grid-template-columns: 1.5fr 1fr; }
 .ship-cols { grid-template-columns: 1.25fr 1fr .8fr; }
@@ -210,3 +210,29 @@ button.citem:hover { background: rgba(111,240,224,.12); border-color: var(--holo
 .death .meter i { display: block; height: 100%; background: var(--holo); }
 .death .lost { display: flex; gap: 6px; justify-content: center; margin: 22px 0 0; flex-wrap: wrap; }
 .death .lost span { font-size: 12px; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.75); }
+
+/* ===== หน้าเริ่มเกม (มอคอัปหน้า 1) ===== */
+.title-screen { position: fixed; inset: 0; z-index: 1; pointer-events: auto; font-family: var(--font-ui); color: #fff;
+  background: linear-gradient(90deg, rgba(0,0,0,.6), transparent 60%); }
+.title-screen[hidden] { display: none; }
+.title-wrap { position: absolute; left: 7vw; top: 50%; transform: translateY(-50%); }
+.title-wrap h1 { margin: 0; font-size: clamp(56px, 8vw, 104px); font-weight: 300; letter-spacing: .08em; line-height: 1.15; text-shadow: 0 0 40px rgba(0,0,0,.4); }
+.title-wrap .tag { font-size: 16px; color: rgba(255,255,255,.75); margin: 8px 0 38px; }
+.menu { display: grid; gap: 6px; width: 300px; }
+.menu button { font: inherit; text-align: left; font-size: 19px; color: rgba(255,255,255,.85); cursor: pointer; background: transparent; border: 0;
+  border-left: 2px solid transparent; padding: 7px 14px; transition: background .15s, color .15s, border-color .15s; }
+.menu button:hover { color: #fff; border-left-color: var(--holo); background: linear-gradient(90deg, rgba(111,240,224,.18), transparent); }
+.menu button:focus-visible { outline: 2px solid var(--holo); outline-offset: 2px; }
+.menu button.first { color: #fff; border-left-color: var(--holo); }
+.menu button small { display: block; font-size: 12px; color: rgba(255,255,255,.55); }
+.menu button small.warn { color: var(--warn); }
+.title-note { margin-top: 18px; font-size: 14px; color: var(--holo); }
+.title-screen .version { position: absolute; right: 24px; bottom: 20px; font-size: 12px; color: rgba(255,255,255,.5); }
+
+/* ===== หน้าตั้งค่า (มอคอัปหน้า 9) ===== */
+.set-cols { grid-template-columns: 1fr 1fr; }
+.setrow { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 14px; font-size: 14px; margin-bottom: 14px; }
+.seg { display: flex; gap: 6px; }
+.setrow input[type=range] { width: 100%; accent-color: var(--holo); cursor: pointer; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; font-size: 13.5px; align-items: center; }
+.keys kbd { font-family: inherit; font-weight: 600; font-size: 12px; padding: 2px 8px; border-radius: 3px; background: rgba(255,255,255,.9); color: #102020; justify-self: start; white-space: nowrap; }

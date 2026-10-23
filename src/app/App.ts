@@ -22,7 +22,7 @@ import { BigMap } from '../ui/BigMap';
 import { MapImage } from '../ui/MapImage';
 import { armViews, beltViews } from './hudView';
 import { Tools, type ScanTarget } from './Tools';
-import { t } from '../ui/strings';
+import { setLang, t } from '../ui/strings';
 import { kind as kindOf } from '../core/catalog';
 import { ScanLog } from '../core/scanlog';
 import { buildLoadout, starterChoice, type ShipChoice } from '../core/gear';
@@ -44,6 +44,8 @@ import { Caves } from '../render/Caves';
 import { WorldGround } from './WorldGround';
 import { Animals } from './Animals';
 import { NatureAudio, type Surface } from '../audio/NatureAudio';
+import { clearSave, readSave, readSettings, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
+import { SettingsScreen, TitleScreen } from '../ui/Menus';
 import { forestDensity } from '../world/scatter';
 import { LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from '../world/layout';
 
@@ -95,6 +97,15 @@ export class App {
   readonly worldGround: WorldGround;
   readonly animals: Animals;
   readonly audio = new NatureAudio();
+  settings: Settings = readSettings();
+  readonly title: TitleScreen;
+  readonly settingsScreen: SettingsScreen;
+  /** กดเล่นแล้วหรือยัง (ยังอยู่หน้าเริ่มเกม = false) */
+  started = false;
+  /** โลกในหน่วยความจำเป็นเกมที่กำลังเล่นอยู่แล้ว (โหลดจากบันทึกหรือกดเล่นไปแล้ว) ห้ามโหลดทับซ้ำ */
+  private live = false;
+  private saveTimer = 0;
+  private titleOrbit = 0;
   private lastStep = 0;
   /** อยู่ลึกในถ้ำแค่ไหน 0 = ข้างนอก 1 = ปลายถ้ำ (หรี่แสงแดดกับแสงฟ้า) */
   caveDepth = 0;
@@ -224,6 +235,21 @@ export class App {
     this.shipScreen = new ShipScreen(uiRoot, { depart: (c) => this.depart(c) });
     this.bodyFx = new BodyFx(uiRoot);
     this.deathScreen = new DeathScreen(uiRoot);
+    this.settingsScreen = new SettingsScreen(uiRoot, {
+      change: (s) => this.applySettings(s),
+      resume: () => {
+        this.settingsScreen.hide();
+        if (this.started) this.input.lock();
+      },
+      toTitle: () => this.toTitle(),
+    });
+    this.title = new TitleScreen(uiRoot, {
+      continueGame: () => this.continueGame(),
+      newGame: () => this.newGame(),
+      openCollection: () => this.inventory.show('collection', { loadout: this.loadout, log: this.scanLog, body: this.bodyView() }),
+      openSettings: () => this.settingsScreen.show(this.settings, true),
+      quit: () => this.save(),
+    });
     this.tools = new Tools({
       scene: this.scene,
       hero: this.hero,
@@ -245,6 +271,19 @@ export class App {
     window.addEventListener('keydown', wake);
 
     this.setQuality(DEFAULT_QUALITY);
+    this.applySettings(this.settings);
+    // หลุดจากการล็อกเมาส์ระหว่างเล่น (กด Esc) = หยุดเกม
+    document.addEventListener('pointerlockchange', () => {
+      if (!this.input.locked && this.started && !this.dying && !this.anyScreenOpen()) this.settingsScreen.show(this.settings, false);
+    });
+    const autosave = () => { if (this.started && !this.dying) this.save(); };
+    window.addEventListener('beforeunload', autosave);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
+    // มาจากปุ่มเริ่มสำรวจใหม่ (ล้างบันทึกแล้วเปิดใหม่) = เริ่มเล่นทันที
+    let autostart = false;
+    try { autostart = sessionStorage.getItem('remnant.autostart') === '1'; sessionStorage.removeItem('remnant.autostart'); } catch { /* ไม่เป็นไร */ }
+    if (autostart) this.startPlaying();
+    else this.showTitle();
     window.addEventListener('resize', () => this.resize());
     this.resize();
     if (import.meta.env.DEV) (window as unknown as { __remnant: App }).__remnant = this;
@@ -304,6 +343,148 @@ export class App {
   setClock(hour: number, day = Math.floor(this.gameTime / DAY_SECONDS)): void {
     this.gameTime = (day + hour / 24) * DAY_SECONDS;
     this.advance(0.05);
+  }
+
+  /** มีหน้าจอไหนเปิดทับเกมอยู่ไหม */
+  private anyScreenOpen(): boolean {
+    return this.inventory.open || this.shipScreen.open || this.bigMap.open || this.settingsScreen.open || this.title.open;
+  }
+
+  /** หน้าเริ่มเกมหรือหยุดเกม: โลกยังสวยอยู่ข้างหลัง ฟ้าเดินเวลาช้า ๆ กล้องหมุนรอบยาน */
+  private updateIdle(dt: number): void {
+    WIND.uTime.value = this.elapsed;
+    this.water.update(dt);
+    if (!this.started) {
+      this.titleOrbit += dt * 0.04;
+      const cx = SHIP.x + 18;
+      const cz = SHIP.z - 30;
+      this.camera.position.set(cx + Math.cos(this.titleOrbit) * 30, this.terrain.heightAt(cx, cz) + 9, cz + Math.sin(this.titleOrbit) * 30);
+      this.camera.lookAt(SHIP.x - 60, this.terrain.heightAt(SHIP.x, SHIP.z) + 14, SHIP.z - 120);
+      this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
+      this.vegetation.update(this.camera.position.x, this.camera.position.z);
+      this.grass.update(this.camera.position.x, this.camera.position.z);
+    }
+    this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog);
+    const d = this.skyState.sun;
+    this.sun.position.set(this.camera.position.x + d[0] * 180, this.camera.position.y + Math.max(0.05, d[1]) * 180, this.camera.position.z + d[2] * 180);
+    this.sun.target.position.copy(this.camera.position);
+  }
+
+  applySettings(s: Settings): void {
+    this.settings = s;
+    if (s.quality !== this.quality) this.setQuality(s.quality);
+    setLang(s.lang);
+    // ชื่อแท็บก็ภาษาเดียวกับในเกม
+    document.title = t('gameTitle');
+    this.audio.natureVolume = s.nature;
+    this.audio.gearVolume = s.gear;
+    this.sky.fogScale = 1.6 - s.viewDistance;
+    writeSettings(s);
+  }
+
+  private showTitle(): void {
+    const d = readSave();
+    // ให้หน้าเริ่มเกมเป็นช่วงแดดเย็นแบบในมอคอัป
+    this.gameTime = d ? d.gameTime : (17.6 / 24) * DAY_SECONDS;
+    this.skyState = skyAt(this.gameTime);
+    if (d) this.scanLog.load(d.scanLog);
+    const found = d ? [...this.scanLog.records.values()].filter((r) => r.seen.length || r.deposited).length : 0;
+    this.hud.root.hidden = true;
+    this.title.show(d ? { body: d.bodyNumber, day: Math.floor(d.gameTime / DAY_SECONDS) + 1, found } : null);
+  }
+
+  private startPlaying(): void {
+    this.started = true;
+    this.live = true;
+    this.title.hide();
+    this.closeScreens();
+    this.hud.root.hidden = false;
+    this.rig.snap(this.player);
+    this.audio.start();
+    this.input.lock();
+  }
+
+  private continueGame(): void {
+    const d = readSave();
+    if (d && !this.live) this.restore(d);
+    this.startPlaying();
+  }
+
+  private newGame(): void {
+    // มีของเก่าค้างในหน่วยความจำ (หน้าแรกโหลดบันทึกสแกนมานับ หรือเล่นไปแล้ว) ต้องเปิดหน้าใหม่ให้โลกสะอาด
+    const hadSave = readSave() !== null;
+    clearSave();
+    if (hadSave || this.live) {
+      try { sessionStorage.setItem('remnant.autostart', '1'); } catch { /* ไม่เป็นไร */ }
+      location.reload();
+      return;
+    }
+    this.gameTime = START_TIME * DAY_SECONDS;
+    this.startPlaying();
+  }
+
+  private toTitle(): void {
+    this.save();
+    this.settingsScreen.hide();
+    this.started = false;
+    this.input.unlock();
+    this.showTitle();
+  }
+
+  /** บันทึกความคืบหน้าทั้งหมดลงเบราว์เซอร์ */
+  save(): boolean {
+    // ยังอยู่หน้าแรกและยังไม่ได้กดเล่น โลกในเครื่องยังเปล่า บันทึกตอนนี้จะทับของเดิมทิ้ง
+    if (!this.live) return false;
+    const p = this.player;
+    const d: SaveData = {
+      version: SAVE_VERSION,
+      savedAt: Date.now(),
+      gameTime: this.gameTime,
+      bodyNumber: this.bodyNumber,
+      player: { x: p.x, z: p.z, heading: p.heading },
+      loadout: this.loadout,
+      shipChoice: this.shipChoice,
+      scanLog: this.scanLog.serialize(),
+      explore: this.explore.serialize(),
+      takenProps: this.props.all.filter((x) => x.taken).map((x) => x.prop.key),
+      corpses: this.corpses.map((c) => ({ n: c.n, x: c.x, z: c.z, slots: c.slots })),
+      droppedBags: this.droppedBags.map((b) => ({ x: b.x, z: b.z, bag: b.bag, beacon: b.beacon })),
+      body: { oxygen: this.body.oxygen, cracks: this.body.cracks, warmth: this.body.warmth },
+    };
+    return writeSave(d);
+  }
+
+  /** โหลดความคืบหน้าที่บันทึกไว้ */
+  restore(d: SaveData): void {
+    this.live = true;
+    this.gameTime = d.gameTime;
+    this.bodyNumber = d.bodyNumber;
+    this.loadout = { belt: d.loadout.belt.slice(0, 9), arms: d.loadout.arms.slice(0, 4) };
+    while (this.loadout.belt.length < 9) this.loadout.belt.push(null);
+    this.shipChoice = d.shipChoice;
+    this.scanLog.load(d.scanLog);
+    this.explore.load(d.explore);
+    for (const k of d.takenProps) this.props.take(k);
+    for (const c of d.corpses) {
+      const obj = remainsModel();
+      const y = this.terrain.heightAt(c.x, c.z);
+      obj.position.set(c.x, y, c.z);
+      this.scene.add(obj);
+      this.corpses.push({ key: `remains-${c.n}`, n: c.n, x: c.x, y, z: c.z, slots: c.slots, object: obj });
+    }
+    for (const b of d.droppedBags) {
+      const object = droppedBagModel();
+      const y = this.terrain.heightAt(b.x, b.z);
+      object.position.set(b.x, y, b.z);
+      this.scene.add(object);
+      this.droppedBags.push({ id: this.bagSeq++, x: b.x, y, z: b.z, bag: b.bag, beacon: b.beacon, object });
+    }
+    this.body.oxygen = d.body.oxygen;
+    this.body.cracks = d.body.cracks;
+    this.body.warmth = d.body.warmth;
+    this.worldGround.contextY = Infinity;
+    this.player.place(d.player.x, d.player.z, d.player.heading);
+    this.rig.snap(this.player);
   }
 
   /** เสียงธรรมชาติตามที่อยู่ เวลา และฝีเท้า */
@@ -591,6 +772,7 @@ export class App {
   enterShip(): void {
     const items = depositAll(this.loadout);
     for (const it of items) this.scanLog.deposit(it.itemId);
+    this.save();
     this.input.unlock();
     this.shipScreen.show(this.shipChoice, items.length ? `${t('depositedN')} ${items.length}` : t('nothingDeposited'));
   }
@@ -620,6 +802,18 @@ export class App {
   private update(dt: number): void {
     this.elapsed += dt;
     this.input.setTime(this.elapsed);
+    if (!this.started || this.settingsScreen.open) {
+      // Esc ในหน้าตั้งค่า = กลับเข้าเกม · ในคอลเลกชันที่เปิดจากหน้าเริ่มเกม = ปิด
+      if (this.input.wasPressed('Escape')) {
+        if (this.settingsScreen.open) { this.settingsScreen.hide(); if (this.started) this.input.lock(); }
+        else if (this.inventory.open) this.closeScreens();
+      }
+      this.updateIdle(dt);
+      this.input.endFrame();
+      return;
+    }
+    this.saveTimer += dt;
+    if (this.saveTimer > 15 && !this.dying) { this.saveTimer = 0; this.save(); }
     if (this.dying) {
       this.updateDeath(dt);
       this.input.endFrame();
@@ -627,7 +821,7 @@ export class App {
     }
     if (this.input.wasPressed('KeyM') && !this.inventory.open && !this.shipScreen.open) this.toggleMap();
     if ((this.input.wasPressed('Tab') || this.input.wasPressed('KeyI')) && !this.shipScreen.open && !this.bigMap.open) {
-      if (this.inventory.open) this.closeScreens();
+      if (this.inventory.open) { this.closeScreens(); this.input.lock(); }
       else this.openInventory('bag');
       this.input.endFrame();
       return;
@@ -643,6 +837,12 @@ export class App {
       this.input.endFrame();
       return;
     }
+    // เมาส์ไม่ได้ล็อกอยู่ (กดออกนอกเกมไปแล้ว) กด Esc ก็ต้องหยุดเกมได้
+    if (this.input.wasPressed('Escape')) {
+      this.settingsScreen.show(this.settings, false);
+      this.input.endFrame();
+      return;
+    }
     for (let i = 0; i < 9; i++) if (this.input.wasPressed(`Digit${i + 1}`)) equipToArm(this.loadout, i);
     if (this.input.wheel !== 0) this.cycleMainArm(this.input.wheel);
     WIND.uTime.value = this.elapsed;
@@ -651,7 +851,7 @@ export class App {
     this.skyState = skyAt(this.gameTime);
 
     const inp = this.input;
-    this.rig.rotate(inp.mouseDX, inp.mouseDY);
+    this.rig.rotate(inp.mouseDX, inp.mouseDY, 0.0008 + this.settings.sensitivity * 0.003);
     const f = this.rig.forward();
     const r = { x: -f.z, z: f.x };
     let mx = 0;

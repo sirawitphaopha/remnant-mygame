@@ -122,7 +122,12 @@ export class Hud {
     this.reticleEl.hidden = true;
 
     this.applyLang();
-    onLangChange(() => this.applyLang());
+    onLangChange(() => {
+      // ข้อความสั้นที่ค้างอยู่เป็นภาษาเดิม ล้างทิ้ง ไม่ให้สองภาษาปนกัน
+      for (const x of this.toasts) x.el.remove();
+      this.toasts = [];
+      this.applyLang();
+    });
   }
 
   private applyLang(): void {

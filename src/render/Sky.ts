@@ -122,6 +122,8 @@ export class Sky {
   night = 0;
   /** แสงสว่างรวมตอนนี้ 0 = มืดสนิท 1 = กลางวัน */
   brightness = 1;
+  /** คูณความหนาหมอก (ระยะมองเห็นในหน้าตั้งค่า) */
+  fogScale = 1;
 
   constructor() {
     this.mesh = new THREE.Mesh(
@@ -183,6 +185,6 @@ export class Sky {
     this.brightness = Math.min(1, day + moonGlow * 0.25);
 
     fog.color.copy(hor);
-    fog.density = 0.0034 + s.fog * 0.014;
+    fog.density = (0.0034 + s.fog * 0.014) * this.fogScale;
   }
 }

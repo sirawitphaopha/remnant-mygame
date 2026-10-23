@@ -332,15 +332,24 @@ export class ShipScreen {
 export class ScanCard {
   readonly root: HTMLDivElement;
   private until = 0;
+  private last: [string, ScanLog, boolean] | null = null;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.className = 'scan-card';
     this.root.hidden = true;
     parent.appendChild(this.root);
+    // เปลี่ยนภาษาแล้วการ์ดที่ค้างอยู่ต้องเปลี่ยนตาม ไม่ให้สองภาษาปนในจอเดียว
+    onLangChange(() => {
+      if (this.root.hidden || !this.last) return;
+      const until = this.until;
+      this.show(this.last[0], this.last[1], this.last[2], 0);
+      this.until = until;
+    });
   }
 
   show(kindId: string, log: ScanLog, unlocked: boolean, now: number): void {
+    this.last = [kindId, log, unlocked];
     const k = kindOf(kindId);
     if (!k) return;
     const truth = log.truth(kindId);
