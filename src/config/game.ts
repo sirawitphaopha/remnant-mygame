@@ -22,6 +22,3 @@ export const MOVE = {
   radius: 0.35,
   height: 1.8,
 } as const;
-
-/** จุดเริ่มเกม · ยานจอดอยู่ข้างหลัง */
-export const SPAWN = { x: -140, z: 160, heading: Math.PI * 0.85 } as const;
