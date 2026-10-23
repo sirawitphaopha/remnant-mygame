@@ -83,7 +83,8 @@ export class Vegetation {
 
   constructor(private terrain: Terrain, private q: QualityPreset, blocked: (x: number, z: number) => boolean = () => false, forced: ForcedTree[] = []) {
     this.trees = scatterTrees(terrain, blocked, forced);
-    this.rocks = scatterRocks(terrain);
+    // หินไม่ขึ้นตรงที่ต้นไม้ขึ้นไม่ได้ (ในตึก บนเนินเหนืออุโมงค์ถ้ำ)
+    this.rocks = scatterRocks(terrain).filter((r) => !blocked(r.x, r.z));
     this.debris = scatterDebris(terrain, blocked);
 
     // วัสดุ: ลำต้น · แผ่นใบแต่ละลาย (เงาไหวตามใบ) · รูปทึบระดับไกล

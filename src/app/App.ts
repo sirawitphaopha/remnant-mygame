@@ -40,7 +40,7 @@ import { emptyLoadout, type Slot } from '../core/gear';
 import { BodyFx, DeathScreen } from '../ui/BodyFx';
 import { remainsModel } from '../render/models/hero';
 import { Structures } from '../world/structures';
-import { buildCaves, caveAt, type Cave } from '../world/caves';
+import { buildCaves, caveAt, insideTunnel, overCave, type Cave } from '../world/caves';
 import { ROCK_SHAPE, rockTypeOf } from '../world/rocks';
 import { planRuins } from '../world/ruins';
 import { applyDetail } from '../render/detail';
@@ -239,7 +239,9 @@ export class App {
     this.jarDrops = jarDropsMesh();
     this.hero.jarGlass.add(this.jarDrops);
     this.scene.add(this.water.mesh);
-    // เมืองวางก่อนป่า ต้นไม้กับขอนไม้จะไม่ขึ้นในตึก (เดิมต้นไม้ 7 ต้นขึ้นในตึก ลำต้นทะลุหลังคา)
+    // ถ้ำกับเมืองวางก่อนป่า ต้นไม้กับขอนไม้จะไม่ขึ้นในตึกหรือบนเนินเหนืออุโมงค์
+    // (เดิมต้นไม้ 7 ต้นขึ้นในตึก ลำต้นทะลุหลังคา · ต้นไม้กับหินบนเนินเหนืออุโมงค์กลายเป็นเสาล่องหนในถ้ำ)
+    this.caves = buildCaves(this.terrain);
     this.town = buildTown(this.terrain, this.structures);
     // ต้นไม้ไม่ขึ้นในตึกที่ยังมีหลังคา หน้าประตู ช่องบันได และในรถร้าง · ซากตึกหลังคาหายต้นไม้ขึ้นข้างในได้ (พันปี)
     const placed = placeProps();
@@ -247,10 +249,11 @@ export class App {
     const treeNo = (x: number, z: number) =>
       Math.hypot(x - fallSpot.x, z - fallSpot.z) < 18 ||
       vehicles.some((v) => Math.hypot(x - v.x, z - v.z) < (v.kind === 'bus' ? 7.5 : 3.6)) ||
-      treeBlocked(this.town, x, z);
+      treeBlocked(this.town, x, z) ||
+      overCave(this.caves, x, z);
     this.vegetation = new Vegetation(this.terrain, this.q, treeNo, planRuins().trees);
     this.scene.add(this.vegetation.group);
-    this.grass = new Grass(this.terrain, this.terrainMesh, this.q, (x, z) => Math.hypot(x - fallSpot.x, z - fallSpot.z) < 18 || grassBlocked(this.town, x, z));
+    this.grass = new Grass(this.terrain, this.terrainMesh, this.q, (x, z) => Math.hypot(x - fallSpot.x, z - fallSpot.z) < 18 || grassBlocked(this.town, x, z) || overCave(this.caves, x, z));
     this.scene.add(this.grass.mesh);
     this.loadMs = Math.round(performance.now() - t0);
 
@@ -282,12 +285,16 @@ export class App {
       }
     }
 
-    this.caves = buildCaves(this.terrain);
     this.townView = new Town(this.town.buildings, this.town.parts, this.town.bridge, this.town.extras);
     this.scene.add(this.townView.group);
     this.cavesView = new Caves(this.caves);
     this.scene.add(this.cavesView.group);
     this.cavesView.cutTerrain(this.terrainMesh.material);
+    // หินงอก เสาหิน ค้ำยัน รถเข็น กองหินถล่ม เตา ลัง แอ่งน้ำ ชนได้ · โคนอยู่ที่พื้นถ้ำ ของบนเนินข้างบนไม่ชนกับในถ้ำ
+    for (const f of this.cavesView.solids) {
+      const top = f.kind === 'pool' ? 1.2 : f.kind === 'cart' ? 1.0 : f.kind === 'stove' ? 0.9 : Math.max(0.3, f.h);
+      this.colliders.add({ x: f.x, z: f.z, r: f.solid, top, stand: f.kind === 'crate' || f.kind === 'collapse' || f.kind === 'cart', y0: f.y });
+    }
     // ลายดินกับผิวนูนบนพื้น (ใส่หลังตัวตัดถ้ำกับพื้นเปียก ทั้งสองยังทำงาน)
     applyDetail(this.terrainMesh.material, 'soil');
     this.worldGround = new WorldGround(this.terrain, this.structures, this.caves, this.colliders);
@@ -717,8 +724,9 @@ export class App {
         const x = a.x + (b.x - a.x) * f;
         const y = a.y + (b.y - a.y) * f;
         const z = a.z + (b.z - a.z) * f;
-        const c = caveAt(this.caves, x, z);
-        if (!c || y > c.ceil - 0.4) { hit = Math.min(hit, f - 0.1); break; }
+        // กล้องต้องอยู่ในรูปตัดของอุโมงค์จริง (เดิมเทียบกับเพดานเส้นตรง ชิดผนังแล้วเงยกล้องทะลุผนังเห็นข้างนอก)
+        const c = caveAt(this.caves, x, z, 0.6);
+        if (!c || !insideTunnel(c, y)) { hit = Math.min(hit, f - 0.1); break; }
       }
     }
     return hit;

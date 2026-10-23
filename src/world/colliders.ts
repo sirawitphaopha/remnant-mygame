@@ -14,6 +14,8 @@ export interface Circle {
 }
 
 const CELL = 16;
+/** ความสูงตัวละครโดยประมาณ ตัวอยู่ต่ำกว่าโคนสิ่งกีดขวางเกินนี้ = อยู่คนละชั้น (เช่นในถ้ำใต้ก้อนหินบนเนิน) */
+const BODY = 1.6;
 
 export class CircleColliders {
   private grid = new Map<number, Circle[]>();
@@ -87,7 +89,9 @@ export class CircleColliders {
   push(x: number, z: number, r: number, feetAbove: (c: Circle) => number): { x: number; z: number; hit: boolean } {
     let hit = false;
     for (const c of this.near(x, z, r + 0.5, this.scratchPush)) {
-      if (feetAbove(c) > c.top - 0.25) continue;
+      // เท้าสูงกว่ายอด (ยืนบนหิน) หรือทั้งตัวอยู่ต่ำกว่าโคน (ในถ้ำใต้หินบนเนิน) = ไม่ชน
+      const fa = feetAbove(c);
+      if (fa > c.top - 0.25 || fa < -BODY) continue;
       const dx = x - c.x;
       const dz = z - c.z;
       const d = Math.hypot(dx, dz);
@@ -122,7 +126,8 @@ export class CircleColliders {
       const t = (-B - Math.sqrt(disc)) / (2 * A);
       if (t < 0 || t > best) continue;
       const y = ay + (by - ay) * t;
-      if (y > groundAt(c.x, c.z) + c.top) continue;
+      const base = c.y0 ?? groundAt(c.x, c.z);
+      if (y > base + c.top || y < base - 0.3) continue;
       best = t;
     }
     return best;

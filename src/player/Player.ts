@@ -197,7 +197,7 @@ export class Player {
 
     if (this.colliders) {
       const feet = this.y;
-      const res = this.colliders.push(nx, nz, MOVE.radius, (c) => feet - this.ground.heightAt(c.x, c.z));
+      const res = this.colliders.push(nx, nz, MOVE.radius, (c) => feet - (c.y0 ?? this.ground.heightAt(c.x, c.z)));
       nx = res.x;
       nz = res.z;
     }
@@ -329,7 +329,7 @@ export class Player {
     // ปีนแล้วชนหินกับต้นไม้เหมือนตอนเดิน (เดิมไต่ทะลุเนื้อหิน)
     if (this.colliders) {
       const feet = this.y;
-      const res = this.colliders.push(nx, nz, MOVE.radius, (c) => feet - this.ground.heightAt(c.x, c.z));
+      const res = this.colliders.push(nx, nz, MOVE.radius, (c) => feet - (c.y0 ?? this.ground.heightAt(c.x, c.z)));
       nx = res.x;
       nz = res.z;
     }

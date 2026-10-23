@@ -58,7 +58,8 @@ export class WorldGround implements SlopeGround {
     const y = this.contextY;
     if (!isFinite(y)) return false;
     const t = this.terrain.heightAt(x, z);
-    if (t < y + 2) return false;
+    // ใกล้ถ้ำ ผิวเนินที่สูงกว่าเท้าครึ่งเมตรก็นับเป็นผนัง (เดิม 2 ม. ช่วงปากถ้ำผิวเนินยังต่ำกว่านั้น เดินทะลุผนังขึ้นไปยืนบนเนินได้)
+    if (t < y + 2 && (t < y + 0.5 || !caveAt(this.caves, x, z, 3))) return false;
     return !this.cave(x, z, y);
   }
 

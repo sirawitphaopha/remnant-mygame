@@ -98,6 +98,13 @@ export const KINDS: Kind[] = [
   k('crow', 'animal', false, undefined, { th: 'อีกา', en: 'Crow' }, { th: 'เงาบิน', en: 'Flying Shadow' },
     { th: 'นกสีดำร้องเสียงแหบ บินวนเหนือซากเมือง', en: 'A black bird with a hoarse voice, circling above the ruins.' },
     { th: 'อีกา — นกฉลาด กินได้แทบทุกอย่าง', en: 'Crow — a clever bird that eats almost anything.' }),
+  // สัตว์ในถ้ำ (รอบสอง ช่วง 11) · ข้อเท็จจริงทั่วไป ไม่มีตัวเลข
+  k('cavefish', 'animal', false, undefined, { th: 'ปลาถ้ำ', en: 'Cavefish' }, { th: 'ปลาไร้ตา', en: 'Eyeless Swimmer' },
+    { th: 'ปลาสีขาวซีดว่ายวนในแอ่งน้ำมืด มันไม่มีตา แต่ว่ายหลบหนวดของฉันได้ทุกครั้ง', en: 'Pale white fish circling in the dark pool. They have no eyes, yet they dodge my tentacle every time.' },
+    { th: 'ปลาถ้ำ — ปลาที่อยู่ในความมืดมาหลายชั่วรุ่นจนตาเสื่อมหายไปและตัวไม่มีสี หาทางด้วยการรับแรงสั่นในน้ำ', en: 'Cavefish — fish that lived in darkness for so many generations that their eyes and colour faded away. They find their way by feeling movement in the water.' }),
+  k('bat', 'animal', false, undefined, { th: 'ค้างคาว', en: 'Bat' }, { th: 'ร่มบินได้', en: 'Flying Umbrella' },
+    { th: 'สัตว์ตัวเล็กมีปีกเป็นแผ่นหนัง บินวนในความมืดโดยไม่ชนอะไรเลย', en: 'Small creatures with leathery wings, circling in the dark without touching anything.' },
+    { th: 'ค้างคาว — สัตว์เลี้ยงลูกด้วยนมที่บินได้จริง หาทางในความมืดด้วยเสียงสะท้อน กลางวันห้อยหัวนอนในถ้ำ', en: 'Bat — a mammal that truly flies. It finds its way in the dark by echoes and sleeps hanging upside down in caves by day.' }),
   k('eagle', 'animal', false, undefined, { th: 'นกอินทรี', en: 'Eagle' }, { th: 'ปีกกว้าง', en: 'Wide Wings' },
     { th: 'นกตัวใหญ่ที่ลอยอยู่บนลมโดยไม่ต้องกระพือปีก', en: 'A large bird that floats on the wind without flapping.' },
     { th: 'นกอินทรี — นกล่าเหยื่อ สายตาดีมาก', en: 'Eagle — a bird of prey with sharp eyesight.' }),
