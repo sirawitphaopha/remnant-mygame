@@ -90,6 +90,13 @@ export class CameraRig {
       this.pitch += (-0.12 - this.pitch) * Math.min(1, dt * 0.6);
     }
 
+    // ตอนปีน กล้องค่อย ๆ หมุนไปอยู่ข้างหลังตัวละคร (ตัวละครหันเข้าผนัง กล้องจะได้อยู่นอกผนัง)
+    if (t.state === 'climb' && mouseIdle > 0.6) {
+      let d = t.heading - this.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this.yaw += d * Math.min(1, dt * 2.5);
+    }
+
     // จุดหมุนตามตัวละครแบบหน่วง (แนวตั้งหน่วงกว่า กล้องไม่เด้งตามก้าว)
     const py = t.y + (t.state === 'swim' ? CAM.pivotHeight + 0.35 : CAM.pivotHeight);
     this.pivot.x += (t.x - this.pivot.x) * (1 - Math.exp(-dt * 14));

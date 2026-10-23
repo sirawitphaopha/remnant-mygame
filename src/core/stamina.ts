@@ -6,7 +6,7 @@ export type Activity = 'idle' | 'walk' | 'run' | 'swim' | 'climb' | 'fall';
 export const STAMINA = {
   max: 100,
   /** ใช้แรงต่อวินาที */
-  cost: { idle: 0, walk: 0, run: 7, swim: 4.5, climb: 10, fall: 0 } as Record<Activity, number>,
+  cost: { idle: 0, walk: 0, run: 7, swim: 4.5, climb: 6, fall: 0 } as Record<Activity, number>,
   /** เดินขึ้นเนิน ใช้แรงเพิ่มตามความชัน (ต่อความชัน 100%) */
   uphill: 9,
   /** กระโดดหนึ่งครั้ง */

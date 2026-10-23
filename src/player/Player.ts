@@ -26,6 +26,12 @@ const SWIM_DEPTH = 1.3;
 
 export interface SlopeGround extends Ground {
   normalAt(x: number, z: number): [number, number, number];
+  /** ความสูงเท้าตอนเริ่มเฟรม ให้พื้นรู้ว่าอยู่ในถ้ำหรือบนหลังคา */
+  contextY?: number;
+  /** ตรงนั้นเป็นผนังถ้ำหรือหิน เดินเข้าไปไม่ได้ ปีนไม่ได้ */
+  blocked?(x: number, z: number): boolean;
+  /** ดันออกจากผนังตึก · คืนกล่องที่ชน (ไว้เริ่มปีนผนังตึก) */
+  pushOut?(x: number, z: number, r: number, feetY: number): { x: number; z: number; hit: { y1: number } | null };
 }
 
 /** ตำแหน่งและการเคลื่อนที่ของตัวละคร · ไม่แตะภาพ */
@@ -59,6 +65,9 @@ export class Player {
   private climbStartY = 0;
   /** กำลังไถลลงเนินชัน (หลุดจากผนังหรือตกลงบนเนินชัน) */
   sliding = false;
+  /** กำลังปีนผนังตึก (ยอดผนังสูงเท่านี้) · null = ปีนหน้าผาธรรมชาติ */
+  private wallTop: number | null = null;
+  private wallDir: [number, number] = [0, 0];
 
   constructor(private ground: SlopeGround, private colliders?: CircleColliders) {}
 
@@ -88,8 +97,10 @@ export class Player {
     const dirZ = len > 0.01 ? intent.z / Math.hypot(intent.x, intent.z) : 0;
     const st = this.stamina;
     const canRun = intent.run && !st.exhausted;
+    this.ground.contextY = this.y;
 
-    if (this.state === 'climb') this.updateClimb(dt, intent, dirX, dirZ, len);
+    if (this.state === 'climb' && this.wallTop !== null) this.updateWallClimb(dt, intent, dirX, dirZ, len);
+    else if (this.state === 'climb') this.updateClimb(dt, intent, dirX, dirZ, len);
     else this.updateMove(dt, intent, dirX, dirZ, len, canRun);
 
     stepStamina(st, dt, this.activity, this.grade, intent.loadRatio);
@@ -140,6 +151,13 @@ export class Player {
     let nx = clamp(this.x + this.vx * dt, -WORLD.half + 3, WORLD.half - 3);
     let nz = clamp(this.z + this.vz * dt, -WORLD.half + 3, WORLD.half - 3);
 
+    // ผนังถ้ำหรือในหิน: ไปต่อไม่ได้
+    if (this.ground.blocked?.(nx, nz)) {
+      nx = this.x;
+      nz = this.z;
+      this.vx *= 0.2;
+      this.vz *= 0.2;
+    }
     // ชันเกินเดินขึ้นไม่ได้: ถือที่ปีนป่ายอยู่ = เริ่มปีน ไม่ถือ = ไปต่อไม่ได้
     if (this.state === 'ground' && !this.walkable(nx, nz) && this.ground.heightAt(nx, nz) > oldFloor + 0.05) {
       if (intent.climbGear && len > 0.01) {
@@ -155,6 +173,22 @@ export class Player {
     if (this.colliders) {
       const feet = this.y;
       const res = this.colliders.push(nx, nz, MOVE.radius, (c) => feet - this.ground.heightAt(c.x, c.z));
+      nx = res.x;
+      nz = res.z;
+    }
+    if (this.ground.pushOut) {
+      const res = this.ground.pushOut(nx, nz, MOVE.radius, this.y);
+      // ชนผนังตึกขณะถือที่ปีนป่ายและดันเข้าหา = เริ่มปีนผนังตึก
+      if (res.hit && intent.climbGear && len > 0.01 && this.state === 'ground' && res.hit.y1 > this.y + 1.2) {
+        this.state = 'climb';
+        this.wallTop = res.hit.y1;
+        this.wallDir = [dirX, dirZ];
+        this.x = res.x;
+        this.z = res.z;
+        this.vx = this.vz = this.vy = 0;
+        this.heading = Math.atan2(-dirX, -dirZ);
+        return;
+      }
       nx = res.x;
       nz = res.z;
     }
@@ -250,7 +284,7 @@ export class Player {
     // แปลงปุ่ม: ดันไปทางผนัง = ขึ้น ถอยหลัง = ลง ซ้ายขวา = เลียบผนัง
     const fwd = dirX * upX + dirZ * upZ;
     const side = dirX * sideX + dirZ * sideZ;
-    const sp = 0.7 * len;
+    const sp = 0.9 * len;
     // ปีนไปตามผิวผนัง: ผนังยิ่งชัน ระยะบนแผนที่ยิ่งสั้น (ส่วนที่เหลือคือขึ้นในแนวตั้ง)
     const steep = Math.max(0.08, n[1]);
     let nx = this.x + (upX * fwd + sideX * side) * sp * steep * dt;
@@ -281,6 +315,40 @@ export class Player {
     }
     // ปีนลงจนถึงพื้นราบข้างล่าง
     if (fwd < -0.3 && this.walkable(this.x - upX * 0.6, this.z - upZ * 0.6) && this.y < oldY) this.state = 'ground';
+  }
+
+  /** ปีนผนังตึกขึ้นตรง ๆ · ดันไปทางผนัง = ขึ้น ถอยหลัง = ลง ถึงยอดแล้วก้าวขึ้นหลังคา */
+  private updateWallClimb(dt: number, intent: MoveIntent, dirX: number, dirZ: number, len: number): void {
+    const [wx, wz] = this.wallDir;
+    const fwd = len > 0.01 ? dirX * wx + dirZ * wz : 0;
+    this.y += fwd * 0.9 * dt;
+    this.activity = 'climb';
+    this.grade = 0;
+    const floor = this.ground.heightAt(this.x, this.z);
+    const fall = (push: number) => {
+      this.state = 'air';
+      this.wallTop = null;
+      this.fallTop = this.y;
+      this.vx = -wx * push;
+      this.vz = -wz * push;
+      this.vy = push > 1 ? 2.5 : 0;
+    };
+    if (!intent.climbGear || this.stamina.exhausted) { fall(0.8); return; }
+    if (intent.jump) { fall(2.5); return; }
+    if (this.y <= floor) {
+      this.y = floor;
+      this.state = 'ground';
+      this.wallTop = null;
+      return;
+    }
+    if (this.y >= this.wallTop! - 0.1) {
+      // ก้าวขึ้นไปยืนบนหลังคา
+      this.x += wx * 0.9;
+      this.z += wz * 0.9;
+      this.y = this.wallTop!;
+      this.state = 'ground';
+      this.wallTop = null;
+    }
   }
 
   /** ทิศผนังที่ปีนอยู่ (ไว้ให้ท่าปีนหันหน้าเข้าผนัง) */

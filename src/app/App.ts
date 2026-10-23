@@ -36,6 +36,12 @@ import { Body, type DeathCause } from '../core/body';
 import { emptyLoadout, type Slot } from '../core/gear';
 import { BodyFx, DeathScreen } from '../ui/BodyFx';
 import { remainsModel } from '../render/models/hero';
+import { Structures } from '../world/structures';
+import { buildCaves, caveAt, type Cave } from '../world/caves';
+import { buildTown, type TownLayout } from '../world/town';
+import { Town } from '../render/Town';
+import { Caves } from '../render/Caves';
+import { WorldGround } from './WorldGround';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
 export class App {
@@ -78,6 +84,13 @@ export class App {
   readonly shipScreen: ShipScreen;
   shipChoice: ShipChoice = starterChoice();
   readonly body = new Body();
+  readonly structures = new Structures();
+  readonly caves: Cave[];
+  readonly town: TownLayout;
+  readonly cavesView: Caves;
+  readonly worldGround: WorldGround;
+  /** อยู่ลึกในถ้ำแค่ไหน 0 = ข้างนอก 1 = ปลายถ้ำ (หรี่แสงแดดกับแสงฟ้า) */
+  caveDepth = 0;
   readonly bodyFx: BodyFx;
   readonly deathScreen: DeathScreen;
   /** ร่างที่เท่าไรแล้ว (ยานจำลองใหม่ทุกครั้งที่ตาย) */
@@ -155,7 +168,19 @@ export class App {
     }
     for (const r of this.vegetation.rocks) this.colliders.add({ x: r.x, z: r.z, r: 1.05 * r.scale, top: 0.75 * r.scale });
 
-    this.player = new Player(this.terrain, this.colliders);
+    this.caves = buildCaves(this.terrain);
+    this.town = buildTown(this.terrain, this.structures);
+    this.scene.add(new Town(this.town.buildings, this.town.bridge).group);
+    this.cavesView = new Caves(this.caves);
+    this.scene.add(this.cavesView.group);
+    this.cavesView.cutTerrain(this.terrainMesh.material);
+    this.worldGround = new WorldGround(this.terrain, this.structures, this.caves);
+    this.gasAt = (x, y, z) => {
+      const c = caveAt(this.caves, x, z);
+      return !!c && c.f >= c.cave.gasFrom && y < c.floor + 4;
+    };
+    this.shelterAt = (x, y, z) => this.structures.roofOver(x, y, z) || (!!caveAt(this.caves, x, z) && y < this.terrain.heightAt(x, z) - 2);
+    this.player = new Player(this.worldGround, this.colliders);
     this.player.place(SPAWN_POINT.x, SPAWN_POINT.z, SPAWN_POINT.heading);
     this.rig = new CameraRig(this.camera);
     this.rig.snap(this.player);
@@ -163,6 +188,7 @@ export class App {
     this.props = new Props(placeProps(), (x, z) => this.terrain.heightAt(x, z), this.colliders, { x: SHIP.x, z: SHIP.z, y: this.terrain.heightAt(SHIP.x, SHIP.z) });
     this.scene.add(this.props.group);
     this.mapImage = new MapImage(this.terrain);
+    this.mapImage.drawBoxes(this.structures.boxes);
     this.hud = new Hud(uiRoot, this.mapImage, this.explore);
     this.bigMap = new BigMap(uiRoot, this.mapImage, this.explore);
     this.bigMap.onClose = () => this.toggleMap(false);
@@ -256,8 +282,34 @@ export class App {
     this.advance(0.05);
   }
 
+  /** พื้นที่กล้องใช้กันจม · อยู่ในถ้ำใช้พื้นถ้ำ */
+  private camGround(x: number, z: number): number {
+    const p = this.player;
+    const c = caveAt(this.caves, x, z);
+    if (c && p.y < this.terrain.heightAt(p.x, p.z) - 2) return c.floor;
+    return this.terrain.heightAt(x, z);
+  }
+
+  /** กล้องชนผนังตึก · ในถ้ำกล้องต้องอยู่ในอุโมงค์ */
+  private camBlock(a: THREE.Vector3, b: THREE.Vector3): number {
+    let hit = this.structures.segment(a.x, a.y, a.z, b.x, b.y, b.z);
+    const p = this.player;
+    if (p.y < this.terrain.heightAt(p.x, p.z) - 2) {
+      for (let i = 1; i <= 10; i++) {
+        const f = i / 10;
+        const x = a.x + (b.x - a.x) * f;
+        const y = a.y + (b.y - a.y) * f;
+        const z = a.z + (b.z - a.z) * f;
+        const c = caveAt(this.caves, x, z);
+        if (!c || y > c.ceil - 0.4) { hit = Math.min(hit, f - 0.1); break; }
+      }
+    }
+    return hit;
+  }
+
   /** ตัวช่วยทดสอบ: วาร์ปไปจุดนั้น */
   teleport(x: number, z: number, heading = this.player.heading): void {
+    this.worldGround.contextY = Infinity;
     this.player.place(x, z, heading);
     this.rig.snap(this.player);
     this.advance(0.1);
@@ -304,8 +356,12 @@ export class App {
       test(pp.prop.key, pp.prop.kind, pp.prop.x, pp.y + (H[pp.prop.kind] ?? 0.12), pp.prop.z);
     }
     for (const c of this.corpses) if (Math.abs(c.x - p.x) < 30 && Math.abs(c.z - p.z) < 30) test(c.key, 'remains', c.x, c.y + 0.3, c.z);
+    for (const b of this.town.buildings) if (Math.abs(b.x - p.x) < 40 && Math.abs(b.z - p.z) < 40) test(b.key, 'building', b.x, b.y + Math.min(b.h, 6) / 2, b.z);
+    for (const s of this.cavesView.scannables) if (Math.abs(s.x - p.x) < 30 && Math.abs(s.z - p.z) < 30) test(s.key, s.kind, s.x, s.y, s.z);
+    const bp = this.town.bridge[0];
+    if (bp && Math.abs(bp.x - p.x) < 40 && Math.abs(bp.z - p.z) < 40) test('bridge-0', 'bridge', bp.x, bp.y1, bp.z);
     const found = best as ScanTarget | null;
-    if (found) found.special = found.kind === 'remains' || (this.props.byKey.get(found.key)?.prop.special ?? false);
+    if (found) found.special = found.kind === 'remains' || found.kind === 'painting' || (this.props.byKey.get(found.key)?.prop.special ?? false);
     return found;
   }
 
@@ -385,6 +441,7 @@ export class App {
     this.bodyNumber++;
     this.body.reset();
     this.hero.root.visible = true;
+    this.worldGround.contextY = Infinity;
     this.player.place(SPAWN_POINT.x, SPAWN_POINT.z, SPAWN_POINT.heading);
     this.player.stamina.value = 100;
     this.player.stamina.exhausted = false;
@@ -562,7 +619,7 @@ export class App {
     this.hero.root.position.set(p.x, p.y, p.z);
     this.hero.root.rotation.y = p.heading;
     this.hero.pose(dt, p.sliding ? 'air' : p.state, p.stepPhase, p.speed, p.running, this.elapsed);
-    this.rig.update(dt, p, { heightAt: (x, z) => this.terrain.heightAt(x, z), colliders: this.colliders }, this.aiming || this.tools.aiming, this.elapsed - inp.lastMouseMove);
+    this.rig.update(dt, p, { heightAt: (x, z) => this.camGround(x, z), colliders: this.colliders, blockers: (a, b) => this.camBlock(a, b) }, this.aiming || this.tools.aiming, this.elapsed - inp.lastMouseMove);
     this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
     this.vegetation.update(p.x, p.z);
     this.grass.update(p.x, p.z);
@@ -578,6 +635,14 @@ export class App {
     }
     this.updateHud();
     this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog);
+    // ในถ้ำ แสงแดดกับแสงฟ้าค่อย ๆ หายตามความลึก เหลือไฟฉายกับเห็ดเรืองแสง
+    const inCave = caveAt(this.caves, p.x, p.z);
+    const under = inCave && p.y < this.terrain.heightAt(p.x, p.z) - 2 ? inCave.f : 0;
+    this.caveDepth += (under - this.caveDepth) * Math.min(1, dt * 2);
+    const dim = 1 - 0.96 * Math.min(1, this.caveDepth / 0.3);
+    this.sun.intensity *= dim;
+    this.hemi.intensity *= dim;
+    this.cavesView.update(this.elapsed);
     // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
     const snap = 4;
     const sx = Math.round(p.x / snap) * snap;

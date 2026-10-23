@@ -30,10 +30,13 @@ export const ROAD_WIDTH = 4.5;
 /** สะพานพัง ตรงที่ถนนข้ามแม่น้ำ */
 export const BRIDGE: P2 & { angle: number } = { x: 163, z: -69, angle: Math.atan2(-30, 75) };
 
-/** ถ้ำ 2 แห่ง · ปากถ้ำหันออกทาง dir (เรเดียน ทิศเดียวกับ heading ของตัวละคร) */
+/**
+ * ถ้ำ 2 แห่ง · (x, z) คือปากถ้ำที่ตีนหน้าผา · ปากถ้ำหันออกทาง dir (เรเดียน ทิศเดียวกับ heading ของตัวละคร)
+ * อุโมงค์เจาะเข้าไปในเนินข้างหลังปากถ้ำ ลึก depth เมตร
+ */
 export const CAVES: (P2 & { dir: number; depth: number })[] = [
-  { x: -150, z: -255, dir: Math.PI * 0.95, depth: 70 },
-  { x: 340, z: 40, dir: -Math.PI * 0.5, depth: 55 },
+  { x: -155, z: -222, dir: Math.PI * 0.95, depth: 70 },
+  { x: 305, z: 40, dir: Math.PI * 0.5, depth: 55 },
 ];
 
 /** ป่าลึกที่มีสัตว์ดุ ทางตะวันตกเฉียงเหนือ */

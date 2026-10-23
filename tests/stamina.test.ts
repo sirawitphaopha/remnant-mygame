@@ -19,7 +19,7 @@ describe('แรง', () => {
     expect(run('walk', 10, 0.5).value).toBeLessThan(100);
     expect(run('run', 8, 0, 1).value).toBeLessThan(run('run', 8, 0, 0).value);
   });
-  it('ปีนหนักที่สุด', () => {
+  it('ปีนหนักกว่าว่ายน้ำ', () => {
     expect(run('climb', 5).value).toBeLessThan(run('swim', 5).value);
   });
   it('หมดแรงแล้วกระโดดไม่ได้จนกว่าจะฟื้น', () => {

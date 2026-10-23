@@ -20,7 +20,11 @@ export class Terrain implements Ground {
   private noise = new Simplex2(WORLD.seed);
   private detail = new Simplex2(WORLD.seed + 7);
 
+  /** ความสูงพื้นตรงปากถ้ำแต่ละแห่ง (คิดก่อนปั้นเนินถ้ำ) */
+  private caveBase: number[];
+
   constructor() {
+    this.caveBase = CAVES.map((c) => this.shapeBase(c.x, c.z));
     const step = Terrain.STEP;
     this.n = WORLD.size / step + 1;
     this.heights = new Float32Array(this.n * this.n);
@@ -38,6 +42,22 @@ export class Terrain implements Ground {
 
   /** รูปร่างภูมิประเทศแบบคำนวณเต็ม (ช้า ใช้ตอนสร้างตารางเท่านั้น) */
   shape(x: number, z: number): number {
+    let h = this.shapeBase(x, z);
+    // ถ้ำ: เนินหน้าผาชันอยู่ข้างหลังปากถ้ำ สูงกว่าเพดานอุโมงค์มาก อุโมงค์จึงอยู่ข้างในภูเขาจริง
+    CAVES.forEach((c, i) => {
+      const ox = -Math.sin(c.dir);
+      const oz = -Math.cos(c.dir);
+      const a = -((x - c.x) * ox + (z - c.z) * oz); // ระยะเข้าไปในเนิน (หลังปากถ้ำ)
+      const w = Math.abs((x - c.x) * -oz + (z - c.z) * ox);
+      if (a < -2 || a > c.depth + 40 || w > 55) return;
+      const rise = 22 * smooth(-1, 5, a) * (1 - smooth(34, 55, w)) * (1 - smooth(c.depth + 15, c.depth + 40, a));
+      h = Math.max(h, this.caveBase[i] + rise + 3 * this.detail.noise(x / 9, z / 9) * smooth(2, 8, a));
+    });
+    return h;
+  }
+
+  /** ภูมิประเทศทั้งหมดยกเว้นเนินถ้ำ */
+  private shapeBase(x: number, z: number): number {
     const nz = this.noise;
     let h = this.hills(x, z);
 
@@ -55,12 +75,6 @@ export class Terrain implements Ground {
     const mesa = nz.fbm(x / 95 - 5, z / 95 + 9, 3);
     const away = (1 - smooth(0.2, 0.9, mask)) * smooth(70, 170, Math.hypot(x - TOWN.x, z - TOWN.z));
     h += (smooth(0.33, 0.4, mesa) * 9 + smooth(0.5, 0.56, mesa) * 7) * away;
-
-    // ถ้ำ: ภูเขาตรงที่มีอุโมงค์ต้องสูงพอ
-    for (const c of CAVES) {
-      const d = Math.hypot(x - c.x, z - c.z);
-      h = Math.max(h, lerp(h, 32, 1 - smooth(30, 95, d)));
-    }
 
     // หุบเขาที่ตั้งเมือง ราบเรียบ
     const dt = Math.hypot(x - TOWN.x, z - TOWN.z);

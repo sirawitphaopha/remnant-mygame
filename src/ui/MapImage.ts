@@ -66,6 +66,19 @@ export class MapImage {
     this.revealed.width = this.revealed.height = n;
   }
 
+  /** วาดตึกกับสะพานลงบนภาพแผนที่ (กล่องหมุนได้) */
+  drawBoxes(boxes: { x: number; z: number; hx: number; hz: number; rot: number }[]): void {
+    const ctx = this.base.getContext('2d')!;
+    ctx.fillStyle = 'rgba(150,152,146,.95)';
+    for (const b of boxes) {
+      ctx.save();
+      ctx.translate((b.x + WORLD.half) / 2, (b.z + WORLD.half) / 2);
+      ctx.rotate(-b.rot);
+      ctx.fillRect(-b.hx / 2, -b.hz / 2, b.hx, b.hz);
+      ctx.restore();
+    }
+  }
+
   /** วาดส่วนที่เคยไปใหม่ (เรียกเมื่อแผนที่ที่สำรวจเปลี่ยน) */
   refresh(explore: ExploreMap): void {
     const m = this.mask.getContext('2d')!;
