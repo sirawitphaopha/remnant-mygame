@@ -65,3 +65,35 @@ export function assemble(parts: Part[]): THREE.BufferGeometry {
   merged.computeBoundingSphere();
   return merged;
 }
+
+/**
+ * รวมชิ้นส่วนของโมเดลที่นิ่ง (ไม่มีชิ้นขยับ) ที่ใช้วัสดุเดียวกันเป็นชิ้นเดียว · ภาพเหมือนเดิม วาดน้อยครั้งลง
+ * (รถคันหนึ่งเดิมวาดราว 13 ครั้ง เสาไฟ 5 ครั้ง · ในเมืองมีรถกับเสาไฟหลายสิบชิ้น)
+ */
+export function flattenStatic(root: THREE.Object3D): void {
+  root.updateMatrixWorld(true);
+  const inv = root.matrixWorld.clone().invert();
+  const byMat = new Map<THREE.Material, THREE.Mesh[]>();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || (m as THREE.InstancedMesh).isInstancedMesh || Array.isArray(m.material) || m.children.length) return;
+    const l = byMat.get(m.material) ?? [];
+    l.push(m);
+    byMat.set(m.material, l);
+  });
+  for (const [mat, list] of byMat) {
+    if (list.length < 2) continue;
+    let geos = list.map((m) => m.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld)));
+    // ใช้เฉพาะข้อมูลจุดที่ทุกชิ้นมี · มีดัชนีบ้างไม่มีบ้าง แปลงเป็นแบบไม่มีดัชนีทั้งหมด
+    const names = Object.keys(geos[0].attributes).filter((n) => geos.every((g) => g.getAttribute(n)));
+    for (const g of geos) for (const n of Object.keys(g.attributes)) if (!names.includes(n)) g.deleteAttribute(n);
+    if (!geos.every((g) => !!g.index === !!geos[0].index)) geos = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    const one = new THREE.Mesh(merged, mat);
+    one.castShadow = list.some((m) => m.castShadow);
+    one.receiveShadow = list.some((m) => m.receiveShadow);
+    for (const m of list) m.removeFromParent();
+    root.add(one);
+  }
+}

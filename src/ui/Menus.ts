@@ -86,7 +86,7 @@ export interface SettingsActions {
 
 const KEYS: [string | StrKey, StrKey][] = [
   ['W A S D', 'kMove'], ['keyMouse', 'kLook'], ['Shift', 'kRun'], ['Space', 'kJump'], ['E', 'kInteract'], ['keyLR', 'kArmsTop'], ['Q / R', 'kArmsLow'],
-  ['keyNums', 'kNum'], ['keyWheel', 'kWheel'], ['keyTabI', 'kBag'], ['M', 'kMap'], ['V', 'kShoulder'], ['G', 'kBeacon'], ['Esc', 'kEsc'],
+  ['keyNums', 'kNum'], ['keyWheel', 'kWheel'], ['keyTabI', 'kBag'], ['M', 'kMap'], ['V', 'kShoulder'], ['L', 'kJarLight'], ['G', 'kBeacon'], ['Esc', 'kEsc'],
 ];
 
 export class SettingsScreen {

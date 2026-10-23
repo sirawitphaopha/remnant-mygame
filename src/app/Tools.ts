@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GEAR, held, type GearSlot, type Loadout } from '../core/gear';
 import type { HeroModel } from '../render/models/hero';
 import { inkBlob, inkSplat, toolModel } from '../render/models/tools';
+import { smallItemModel } from '../render/models/props';
 import { t } from '../ui/strings';
 
 /** ของที่สแกนได้ตรงหน้า */
@@ -62,6 +63,8 @@ export class Tools {
   /** แขนที่กำลังสแกน (ไว้บอกปุ่มที่ถูกในป้ายกลางจอ) */
   scanArm = 0;
   aiming = false;
+  /** แขนที่เพิ่งใช้กาวหรือออกซิเจน ยกค้างไว้อีกครู่ (วินาที) */
+  private raiseHold = [0, 0, 0, 0];
   private tmpA = new THREE.Vector3();
 
   constructor(private host: ToolsHost) {
@@ -76,6 +79,12 @@ export class Tools {
     this.syncHands();
     this.scanning = false;
     this.aiming = false;
+    // แขนที่ใช้อุปกรณ์ยกขึ้น (ไฟฉายเปิดอยู่ยกค้าง · สแกน ยิงหมึกยกตอนกด · กาว ออกซิเจนยกแวบหนึ่ง)
+    const raise = this.host.hero.raise;
+    for (let a = 0; a < 4; a++) {
+      this.raiseHold[a] = Math.max(0, this.raiseHold[a] - dt);
+      raise[a] = this.raiseHold[a] > 0 ? 1 : 0;
+    }
     for (let arm = 0; arm < 4; arm++) {
       this.fireCooldown[arm] = Math.max(0, this.fireCooldown[arm] - dt);
       const s = held(l, arm);
@@ -85,7 +94,7 @@ export class Tools {
       const isPressed = pressed(btn);
       switch (s.id) {
         case 'scanner':
-          if (isDown) { this.scanArm = arm; this.scan(dt, viewOrigin, viewDir); }
+          if (isDown) { this.scanArm = arm; this.scan(dt, viewOrigin, viewDir); raise[arm] = 1; }
           break;
         case 'flashlight':
           if (isPressed) {
@@ -96,11 +105,13 @@ export class Tools {
         case 'inkGun':
           if (isDown) {
             this.aiming = true;
+            raise[arm] = 1;
             if (this.fireCooldown[arm] <= 0 && (isPressed || this.fireCooldown[arm] <= 0)) this.fireInk(s, arm, viewDir);
           }
           break;
         case 'glueGun':
           if (isPressed) {
+            this.raiseHold[arm] = 0.8;
             if ((s.amount ?? 0) <= 0) this.host.toast(t('noGlue'), 'warn');
             else if (this.host.sealCrack()) { s.amount = (s.amount ?? 0) - 1; this.host.toast(t('sealed')); this.host.sound?.('glue'); }
             else this.host.toast(t('noCracks'));
@@ -108,13 +119,14 @@ export class Tools {
           break;
         case 'oxygenTank':
           if (isPressed) {
+            this.raiseHold[arm] = 0.8;
             if ((s.amount ?? 0) <= 0) this.host.toast(t('noTanks'), 'warn');
             else if (this.host.refillOxygen()) { s.amount = (s.amount ?? 0) - 1; this.host.toast(t('oxygenRefilled')); }
             else this.host.toast(t('oxygenFull'));
           }
           break;
         case 'bag':
-          if (isPressed) this.host.toast(t('bagHint'));
+          // เดิมขึ้นข้อความบอกปุ่มเปิดกระเป๋า · บนจอไม่บอกเรื่องปุ่มแล้ว (อ่านได้ที่หน้าตั้งค่า)
           break;
         default:
           break;
@@ -208,6 +220,8 @@ export class Tools {
       if (this.host.sunlit()) s.charge = Math.min(1, (s.charge ?? 0) + dt / GEAR.flashlight.sunChargeSeconds);
     }
     if (light && light.on && lightArm >= 0) {
+      // ถือไฟฉายยกชี้ไปข้างหน้า แสงออกจากหัวไฟฉายในมือ
+      this.host.hero.raise[lightArm] = 1;
       const hand = this.host.hero.hands[lightArm];
       hand.getWorldPosition(this.spot.position);
       const fwd = this.tmpA.set(0, -0.15, -1).applyQuaternion(this.host.hero.root.quaternion);
@@ -230,9 +244,17 @@ export class Tools {
       if (this.inHand[a]) this.inHand[a]!.removeFromParent();
       this.inHand[a] = null;
       if (s && s.kind === 'gear') {
+        // ปลายอุปกรณ์ชี้ตามแนวแขนออกจากมือ ยกแขนแล้วชี้ไปข้างหน้า (เดิมชี้ย้อนเข้าหาไหล่ ยกแขนแล้วปลายหันกลับหาตัว)
         const m = toolModel(s.id);
-        m.position.set(0, -0.06, -0.04);
-        m.rotation.x = Math.PI / 2;
+        m.position.set(0, -0.07, 0);
+        m.rotation.x = -Math.PI / 2;
+        this.host.hero.hands[a].add(m);
+        this.inHand[a] = m;
+      } else if (s && s.kind === 'item') {
+        // ของที่เก็บมาถือไว้ในมือจริง (เดิมแขนว่างเปล่าแม้ถือของอยู่)
+        const m = smallItemModel(s.itemId);
+        m.scale.setScalar(0.8);
+        m.position.set(0, -0.1, -0.02);
         this.host.hero.hands[a].add(m);
         this.inHand[a] = m;
       }

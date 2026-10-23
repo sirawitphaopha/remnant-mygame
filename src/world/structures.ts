@@ -67,13 +67,14 @@ export class Structures {
 
   /**
    * ดันวงกลมรัศมี r ออกจากผนัง · คืนตำแหน่งใหม่และกล่องที่ชน (ไว้เริ่มปีน)
-   * ชนเฉพาะกล่องที่ตัวละครอยู่ในช่วงความสูงของมัน
+   * ชนเฉพาะกล่องที่ตัวละครอยู่ในช่วงความสูงของมัน · กล่องที่สูงกว่าเท้าไม่เกินระยะก้าวขึ้น (ขั้นบันได) ไม่ชน ก้าวขึ้นได้
+   * (เดิมนับกล่องที่สูงกว่าเท้าเกิน 0.3 ม. เป็นผนัง ตัวละครกว้าง 0.6 ม. ชนขั้นที่สองก่อนขึ้นขั้นแรกได้ ติดตีนบันได)
    */
   push(x: number, z: number, r: number, feetY: number): { x: number; z: number; hit: Box | null } {
     let hit: Box | null = null;
     for (let pass = 0; pass < 2; pass++) {
       for (const b of this.near(x, z)) {
-        if (feetY >= b.y1 - 0.3 || feetY + HERO.bodyHeight <= b.y0) continue;
+        if (feetY >= b.y1 - HERO.stepUp || feetY + HERO.bodyHeight <= b.y0) continue;
         const [lx, lz] = Structures.local(b, x, z);
         const px = b.hx + r - Math.abs(lx);
         const pz = b.hz + r - Math.abs(lz);

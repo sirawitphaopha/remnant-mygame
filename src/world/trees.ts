@@ -78,7 +78,8 @@ const MIX: Partial<Record<BiomeId, [string, number][]>> = {
   [BIOME.alpine]: [['fir', 50], ['spruce', 30], ['scotsPine', 20]],
   [BIOME.wetland]: [['willow', 40], ['alder', 45], ['birch', 15]],
   [BIOME.shore]: [['willow', 45], ['alder', 45], ['birch', 10]],
-  [BIOME.town]: [['birch', 35], ['maple', 25], ['jacaranda', 22], ['cherry', 18]],
+  // เมืองเก่าพันปี กลายเป็นป่าผสมแบบป่ารอบ ๆ มีต้นไม้ประดับที่คนเคยปลูกหลงเหลือบ้าง (เดิมเป็นไม้ดอกครึ่งหนึ่ง ดูเป็นสวนสาธารณะ)
+  [BIOME.town]: [['oak', 20], ['beech', 16], ['birch', 18], ['maple', 14], ['scotsPine', 12], ['spruce', 8], ['cherry', 7], ['jacaranda', 5]],
   [BIOME.farmland]: [['oak', 50], ['birch', 30], ['cherry', 20]],
 };
 const OPEN: [string, number][] = [['oak', 38], ['birch', 22], ['cherry', 14], ['jacaranda', 6], ['maple', 12], ['scotsPine', 8]];

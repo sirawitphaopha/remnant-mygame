@@ -12,6 +12,8 @@ const rainVert = /* glsl */ `
   uniform vec3 uCam;
   uniform vec2 uWind;
   uniform float uAmount;
+  uniform vec4 uHole;
+  uniform vec2 uHoleRot;
   varying float vAlpha;
   #include <fog_pars_vertex>
   void main() {
@@ -27,7 +29,11 @@ const rainVert = /* glsl */ `
     vec3 side = vec3(-toCam.z, 0.0, toCam.x);
     vec3 world = p + side * position.x + vec3(uWind.x * -0.08, 1.0, uWind.y * -0.08) * position.y;
     // เม็ดที่ไม่ได้ใช้ตามความแรงฝนหดหาย
-    float use = step(seed.w, uAmount);
+    // เม็ดที่อยู่ในตึกที่กล้องอยู่ข้างในไม่ตก (มองออกหน้าต่างเห็นฝนข้างนอก ในห้องแห้ง)
+    vec2 hd = p.xz - uHole.xy;
+    vec2 hl = vec2(hd.x * uHoleRot.x - hd.y * uHoleRot.y, hd.x * uHoleRot.y + hd.y * uHoleRot.x);
+    float inHole = step(abs(hl.x), uHole.z) * step(abs(hl.y), uHole.w);
+    float use = step(seed.w, uAmount) * (1.0 - inHole);
     vAlpha = use * (0.3 + 0.35 * seed.w) * smoothstep(1.5, 4.0, distance(p, cameraPosition));
     vec4 mvPosition = viewMatrix * vec4(world, 1.0);
     gl_Position = projectionMatrix * mvPosition * use + vec4(0.0, 0.0, -2.0, 1.0) * (1.0 - use);
@@ -48,12 +54,17 @@ const splashVert = /* glsl */ `
   attribute vec3 seed;
   uniform float uTime;
   uniform float uAmount;
+  uniform vec4 uHole;
+  uniform vec2 uHoleRot;
   varying float vA;
   #include <fog_pars_vertex>
   void main() {
     float t = fract(uTime * (1.4 + seed.z) + seed.x * 7.0);
     float use = step(seed.y, uAmount);
     vec3 p = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    vec2 hd = p.xz - uHole.xy;
+    vec2 hl = vec2(hd.x * uHoleRot.x - hd.y * uHoleRot.y, hd.x * uHoleRot.y + hd.y * uHoleRot.x);
+    use *= 1.0 - step(abs(hl.x), uHole.z) * step(abs(hl.y), uHole.w);
     vec3 world = p + vec3(position.x, 0.0, position.y) * (0.03 + t * 0.12) + vec3(0.0, 0.03, 0.0);
     vA = (1.0 - t) * 0.5 * use;
     vec4 mvPosition = viewMatrix * vec4(world, 1.0);
@@ -78,6 +89,9 @@ export class Rain {
     uWind: { value: new THREE.Vector2(0.8, 0.6) },
     uAmount: { value: 0 },
     uColor: { value: new THREE.Color(0.86, 0.9, 0.95) },
+    /** ช่องที่ฝนไม่ตก (ตึกที่กล้องอยู่ข้างใน) กลาง x z ครึ่งกว้าง ครึ่งลึก · มุมหมุน cos sin */
+    uHole: { value: new THREE.Vector4(1e9, 1e9, 0, 0) },
+    uHoleRot: { value: new THREE.Vector2(1, 0) },
   };
   private splashes: THREE.InstancedMesh;
   private lastSX = Infinity;
@@ -111,7 +125,7 @@ export class Rain {
     // ละอองกระเด็นเป็นวงบนพื้นรอบตัว
     const ring = new THREE.RingGeometry(0.6, 1, 10);
     const smat = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: this.uniforms.uTime, uAmount: this.uniforms.uAmount }]),
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: this.uniforms.uTime, uAmount: this.uniforms.uAmount, uHole: this.uniforms.uHole, uHoleRot: this.uniforms.uHoleRot }]),
       vertexShader: splashVert,
       fragmentShader: splashFrag,
       transparent: true,
@@ -121,6 +135,8 @@ export class Rain {
     });
     smat.uniforms.uTime = this.uniforms.uTime;
     smat.uniforms.uAmount = this.uniforms.uAmount;
+    smat.uniforms.uHole = this.uniforms.uHole;
+    smat.uniforms.uHoleRot = this.uniforms.uHoleRot;
     this.splashes = new THREE.InstancedMesh(ring, smat, 260);
     const ss = new Float32Array(260 * 3);
     for (let i = 0; i < ss.length; i++) ss[i] = Math.random();
@@ -130,9 +146,16 @@ export class Rain {
     this.group.visible = false;
   }
 
-  /** amount = ความแรงฝน 0 ถึง 1 · sheltered = กล้องอยู่ใต้หลังคาหรือในถ้ำ (ไม่เห็นสายฝนรอบตัว) */
-  update(dt: number, cam: THREE.Vector3, amount: number, sheltered: boolean): void {
+  /**
+   * amount = ความแรงฝน 0 ถึง 1 · sheltered = กล้องอยู่ใต้หลังคาหรือในถ้ำ (ไม่เห็นสายฝนรอบตัว)
+   * hole = กล้องอยู่ในตึก ฝนตกเฉพาะนอกตึก มองออกหน้าต่างยังเห็นฝน (เดิมเข้าตึกแล้วฝนข้างนอกหายหมด)
+   */
+  update(dt: number, cam: THREE.Vector3, amount: number, sheltered: boolean, hole: { x: number; z: number; hx: number; hz: number; rot: number } | null = null): void {
     this.uniforms.uTime.value += dt;
+    if (hole) {
+      this.uniforms.uHole.value.set(hole.x, hole.z, hole.hx, hole.hz);
+      this.uniforms.uHoleRot.value.set(Math.cos(hole.rot), Math.sin(hole.rot));
+    } else this.uniforms.uHole.value.set(1e9, 1e9, 0, 0);
     this.uniforms.uAmount.value = sheltered ? 0 : amount;
     this.uniforms.uCam.value.copy(cam);
     this.group.visible = amount > 0.01 && !sheltered;

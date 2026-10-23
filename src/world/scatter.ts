@@ -1,5 +1,5 @@
 import { WORLD } from '../config/game';
-import { CAVES, REGIONS, RIVER, RIVER_WIDTH, ROAD_WIDTH, SHIP, distToPolyline, distToRoads } from './layout';
+import { CAVES, REGIONS, RIVER, RIVER_WIDTH, ROAD_WIDTH, SHIP, TOWN, distToPolyline, distToRoads } from './layout';
 import { BIOME, type BiomeId } from './terrainGen';
 import { ALL_TREE_KINDS, ORCHARD_ROWS, SPECIES_BY_ID, deadKindOf, pickSpecies, type TreeKind } from './trees';
 import { Simplex2, hash2 } from './noise';
@@ -24,24 +24,25 @@ export interface TreeSet {
 const forestNoise = new Simplex2(WORLD.seed + 101);
 
 /**
- * ความหนาแน่นป่าพื้นฐานของแต่ละชนิดพื้นที่ (BIOME) · ป่าดิบชื้นกับป่าทึบแน่นสุด ทุ่งโล่งมีไม้เดี่ยวประปราย
- * ช่วง 4 ปลูกต้นไม้ 19 ชนิดตามป่าแต่ละแบบแทนชุดนี้
+ * ความหนาแน่นป่าพื้นฐานของแต่ละชนิดพื้นที่ (BIOME) · ป่าดิบชื้นกับป่าทึบแน่นสุด
+ * โลกหลังมนุษย์หายไปราวพันปี (พี่กันกำหนด 23 ต.ค. 2569): ทุ่งไม่โล่งเตียน มีดงไม้กับไม้เดี่ยวขึ้นแทรก
+ * เมืองเก่าต้นไม้ขึ้นรกครึ้ม ทุ่งนาเก่าเป็นทุ่งหญ้ามีพุ่มไม้กับไม้เบิกนำ · ทุ่งดอกไม้ยังเปิดโล่งพอให้เห็นทุ่ง
  */
 const BIOME_FOREST: number[] = [];
 BIOME_FOREST[BIOME.water] = 0;
-BIOME_FOREST[BIOME.shore] = 0.06;
-BIOME_FOREST[BIOME.meadow] = 0.07;
-BIOME_FOREST[BIOME.flowers] = 0.03;
-BIOME_FOREST[BIOME.tallGrass] = 0.04;
-BIOME_FOREST[BIOME.farmland] = 0.02;
-BIOME_FOREST[BIOME.wetland] = 0.12;
-BIOME_FOREST[BIOME.town] = 0.1;
+BIOME_FOREST[BIOME.shore] = 0.12;
+BIOME_FOREST[BIOME.meadow] = 0.2;
+BIOME_FOREST[BIOME.flowers] = 0.08;
+BIOME_FOREST[BIOME.tallGrass] = 0.12;
+BIOME_FOREST[BIOME.farmland] = 0.14;
+BIOME_FOREST[BIOME.wetland] = 0.2;
+BIOME_FOREST[BIOME.town] = 0.5;
 BIOME_FOREST[BIOME.redwood] = 0.7;
 BIOME_FOREST[BIOME.rainforest] = 0.95;
 BIOME_FOREST[BIOME.deciduous] = 0.72;
 BIOME_FOREST[BIOME.orchard] = 0.6;
 BIOME_FOREST[BIOME.dense] = 0.88;
-BIOME_FOREST[BIOME.alpine] = 0.12;
+BIOME_FOREST[BIOME.alpine] = 0.18;
 BIOME_FOREST[BIOME.rock] = 0.04;
 BIOME_FOREST[BIOME.snow] = 0;
 
@@ -87,7 +88,10 @@ export function scatterTrees(t: Terrain, blocked: (x: number, z: number) => bool
       if (b === BIOME.orchard) continue; // ปลูกเป็นแถวข้างล่าง
       const dens = forestDensity(t, x, z);
       if (r1 > dens * 0.85) continue;
-      if (!canPlace(t, x, z, 0.32, 3) || blocked(x, z)) continue;
+      // ถนนเก่าพันปี ยางมะตอยแตกเป็นดิน ต้นไม้ขึ้นบนแนวถนนได้ แต่บางกว่าข้างทาง (ดินบดอัดแน่น)
+      const onRoad = distToRoads(x, z) < ROAD_WIDTH + 1.5;
+      if (onRoad && hash2(i, j, 8) < 0.55) continue;
+      if (!canPlace(t, x, z, 0.32, onRoad ? -ROAD_WIDTH - 2 : 3) || blocked(x, z)) continue;
       const sp = pick(b, x, z, hash2(i, j, 4));
       const height = sp.height[0] + (sp.height[1] - sp.height[0]) * hash2(i, j, 6);
       const kind = hash2(i, j, 7) < deadChance(b) ? deadKindOf(sp) : sp.id;
@@ -233,7 +237,10 @@ export function grassDensity(t: Terrain, x: number, z: number): number {
   if (slope > 0.38) return 0;
   const road = distToRoads(x, z);
   let d = 1 - smooth(0.2, 0.38, slope);
-  d *= 0.15 + 0.85 * smooth(ROAD_WIDTH * 0.55, ROAD_WIDTH + 1.5, road); // หญ้าขึ้นแทรกถนนพังบ้าง
+  // ถนนเก่าพันปี ยางมะตอยเหลือเป็นแผ่นแตก ๆ หญ้าไม่ขึ้นบนแผ่นที่เหลือ ที่อื่นดินกลบหญ้าขึ้นเต็ม
+  if (road < ROAD_WIDTH + 1) d *= 1 - 0.95 * pavedLeft(x, z);
+  // ทางเท้าในเมืองที่ยังเหลือเป็นแผ่น หญ้าขึ้นตามร่อง
+  if (Math.hypot(x - TOWN.x, z - TOWN.z) < TOWN.radius * 1.2 && road < 6.8) d *= 1 - 0.8 * pavedLeft(x, z);
   d *= 1 - 0.55 * forestDensity(t, x, z);
   // บนเขาหญ้าเตี้ยบางลงจนหมดที่แนวหิมะ
   d *= 1 - smooth(350, 560, h) * 0.85;
@@ -241,4 +248,15 @@ export function grassDensity(t: Terrain, x: number, z: number): number {
   if (b === BIOME.snow) return 0;
   if (b === BIOME.rock) d *= 0.15;
   return d;
+}
+
+const paveNoise = new Simplex2(WORLD.seed + 377);
+
+/**
+ * ยางมะตอยหรือแผ่นปูนที่ยังเหลือตรงนี้ 0 ถึง 1 · พันปีผ่านไปเหลือเป็นแผ่นแตกกระจายราวหนึ่งในสาม ที่เหลือดินกลบ
+ * (ใช้ทั้งสีพื้นใน render/TerrainMesh.ts และหญ้า)
+ */
+export function pavedLeft(x: number, z: number): number {
+  const n = paveNoise.fbm(x / 9, z / 9, 2) + 0.35 * paveNoise.noise(x / 2.6 + 11, z / 2.6 - 5);
+  return smooth(0.18, 0.42, n);
 }

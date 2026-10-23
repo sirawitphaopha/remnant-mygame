@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WORLD } from '../config/game';
 import { MOUNTAINS, ROAD_WIDTH, TOWN, distToRoads } from '../world/layout';
+import { pavedLeft } from '../world/scatter';
 import { Simplex2 } from '../world/noise';
 import { BIOME, BIOME_COUNT, BIOME_STEP } from '../world/terrainGen';
 import { smooth, type Terrain } from '../world/Terrain';
@@ -32,7 +33,9 @@ const C = {
   rockA: new THREE.Color(0.30, 0.28, 0.25),
   rockB: new THREE.Color(0.38, 0.35, 0.31),
   snow: new THREE.Color(0.86, 0.88, 0.9),
-  asphalt: new THREE.Color(0.22, 0.22, 0.22),
+  // ยางมะตอยเก่าสะท้อนแสงราว 1 ใน 10 (ค่าเดิม 0.22 กลางแดดดูขาวเหมือนลานปูน)
+  asphalt: new THREE.Color(0.085, 0.085, 0.09),
+  sidewalk: new THREE.Color(0.3, 0.29, 0.27),
   concrete: new THREE.Color(0.45, 0.44, 0.41),
 };
 
@@ -48,7 +51,8 @@ BIOME_COLORS[BIOME.flowers] = [new THREE.Color(0.27, 0.36, 0.14), new THREE.Colo
 BIOME_COLORS[BIOME.tallGrass] = [new THREE.Color(0.36, 0.38, 0.17), new THREE.Color(0.45, 0.43, 0.22)];
 BIOME_COLORS[BIOME.farmland] = [new THREE.Color(0.40, 0.36, 0.22), new THREE.Color(0.33, 0.37, 0.17)];
 BIOME_COLORS[BIOME.wetland] = [new THREE.Color(0.20, 0.25, 0.14), new THREE.Color(0.28, 0.27, 0.18)];
-BIOME_COLORS[BIOME.town] = [new THREE.Color(0.30, 0.33, 0.18), C.concrete];
+// เมืองเก่าพันปี ดินกับใบไม้ทับถมจนเป็นพื้นป่า เหลือลานปูนเป็นหย่อม ๆ (เดิมผสมสีปูนครึ่งหนึ่ง พื้นเมืองซีดขาว)
+BIOME_COLORS[BIOME.town] = [new THREE.Color(0.21, 0.25, 0.12), new THREE.Color(0.28, 0.27, 0.16)];
 BIOME_COLORS[BIOME.redwood] = [new THREE.Color(0.30, 0.20, 0.13), new THREE.Color(0.24, 0.22, 0.12)];
 BIOME_COLORS[BIOME.rainforest] = [new THREE.Color(0.12, 0.21, 0.09), new THREE.Color(0.17, 0.25, 0.10)];
 BIOME_COLORS[BIOME.deciduous] = [new THREE.Color(0.33, 0.28, 0.15), new THREE.Color(0.25, 0.29, 0.13)];
@@ -321,12 +325,19 @@ export class TerrainMesh {
     out.lerp(C.snow, snow);
     // ถนนยางมะตอยแตก มีหญ้าขึ้นแทรก
     const dr = distToRoads(x, z);
-    const asphalt = (1 - smooth(ROAD_WIDTH * 0.75, ROAD_WIDTH + 0.6, dr)) * (n2 > 0.55 ? 0.35 : 1);
+    // พันปี ยางมะตอยเหลือเป็นแผ่นแตก ๆ ระหว่างแผ่นเป็นดินกับหญ้า (world/scatter.ts pavedLeft ใช้ร่วมกับหญ้า)
+    const roadBed = 1 - smooth(ROAD_WIDTH * 0.75, ROAD_WIDTH + 0.6, dr);
+    const left = roadBed > 0 ? pavedLeft(x, z) : 0;
+    const asphalt = roadBed * left;
+    // แนวถนนที่ดินกลบแล้ว ดินร่วนสีเข้มกว่าข้างทาง ยังพอเห็นเป็นแนว
+    out.lerp(C.mud, roadBed * (1 - left) * 0.35);
     out.lerp(C.asphalt, asphalt);
-    // ลานคอนกรีตในเมือง
+    // ลานคอนกรีตในเมือง · ทางเท้าสองข้างถนนในเมือง (ขอบถนนถึงหน้าตึก)
     const dt = Math.hypot(x - TOWN.x, z - TOWN.z);
-    const yard = (1 - smooth(TOWN.radius * 0.35, TOWN.radius * 0.6, dt)) * smooth(-0.2, 0.3, n1) * (1 - asphalt);
-    out.lerp(C.concrete, yard * 0.7);
+    const walk = dt < TOWN.radius * 1.2 ? smooth(ROAD_WIDTH + 0.2, ROAD_WIDTH + 0.7, dr) * (1 - smooth(6.2, 6.8, dr)) * pavedLeft(x + 31, z - 17) : 0;
+    out.lerp(C.sidewalk, walk);
+    const yard = (1 - smooth(TOWN.radius * 0.35, TOWN.radius * 0.6, dt)) * smooth(0.1, 0.5, n1) * (1 - asphalt);
+    out.lerp(C.concrete, yard * 0.35);
     // แปรสีเล็กน้อยทุกจุด
     out.multiplyScalar(0.93 + 0.1 * n2);
     return out;

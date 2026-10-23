@@ -43,9 +43,9 @@ function blob(r: number, x: number, y: number, z: number, sy = 1, detail = 0): T
 }
 
 /** แผ่นใบหนึ่งแผ่น หมุนสุ่ม กลางแผ่นอยู่ที่ c · hang = แผ่นตั้งห้อยลง (หลิว ปาล์ม) */
-interface Card { c: THREE.Vector3; size: number; color: THREE.Color; sway: number; tilt?: number; yaw?: number; stretch?: number; hang?: boolean }
+export interface Card { c: THREE.Vector3; size: number; color: THREE.Color; sway: number; tilt?: number; yaw?: number; stretch?: number; hang?: boolean }
 
-function cardsGeometry(cards: Card[], rand: () => number): THREE.BufferGeometry {
+export function cardsGeometry(cards: Card[], rand: () => number): THREE.BufferGeometry {
   const geos: THREE.BufferGeometry[] = [];
   const e = new THREE.Euler();
   const q = new THREE.Quaternion();

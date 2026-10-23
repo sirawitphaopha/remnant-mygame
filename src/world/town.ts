@@ -1,89 +1,71 @@
-import { BUILDING } from '../config/scale';
 import { WORLD } from '../config/game';
-import { BRIDGE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from './layout';
-import { rng } from './noise';
+import { BRIDGE, RIVER_WIDTH } from './layout';
+import { buildingParts, planExtras, planTown, toWorld, type Building, type TownBox, type TownExtra } from './townPlan';
+import { Structures as S } from './structures';
 import type { Structures } from './structures';
 import type { Terrain } from './Terrain';
 
-// เมืองพังในหุบเขา + สะพานพัง · วางด้วยตัวสุ่มที่ตั้งเลขไว้ ผลเดิมทุกครั้ง
+// เมืองที่มีจริงในหุบริมแม่น้ำ (ผังใน townPlan.ts) + สะพานพัง · ผลเดิมทุกครั้ง
+// ทุกตึกเดินเข้าได้ · กล่องทุกชิ้น (ผนังมีช่องประตูหน้าต่าง พื้นแต่ละชั้น บันได เฟอร์นิเจอร์) ใส่ตัวชนด้วย
 
-export type BuildingStyle = 'solid' | 'ruin' | 'shelter';
-
-export interface Building {
-  key: string;
-  x: number;
-  z: number;
-  w: number;
-  d: number;
-  h: number;
-  rot: number;
-  y: number;
-  style: BuildingStyle;
-  /** สีผนัง (ไว้ให้ภาพเลือกโทน) */
-  tone: number;
-}
+export type { Building, TownExtra } from './townPlan';
 
 export interface BridgePart { x: number; z: number; hx: number; hz: number; rot: number; y0: number; y1: number; kind: 'deck' | 'pillar' | 'rail' }
 
 export interface TownLayout {
   buildings: Building[];
+  /** กล่องของแต่ละตึก (พิกัดในตึก) ใช้วาดภาพ */
+  parts: Map<string, TownBox[]>;
+  /** ของชิ้นเล็กในห้อง (พิกัดโลก) */
+  items: { key: string; kind: string; x: number; y: number; z: number; special?: boolean }[];
+  /** สวน สุสาน สนามเด็กเล่น หอส่งน้ำ */
+  extras: TownExtra[];
   bridge: BridgePart[];
 }
 
 export function buildTown(t: Terrain, s: Structures): TownLayout {
-  const r = rng(WORLD.seed + 808);
   const buildings: Building[] = [];
-  const tries = 220;
-  for (let i = 0; i < tries && buildings.length < 16; i++) {
-    const a = r() * Math.PI * 2;
-    const dist = 14 + Math.sqrt(r()) * TOWN.radius * 0.62;
-    const x = TOWN.x + Math.cos(a) * dist;
-    const z = TOWN.z + Math.sin(a) * dist;
-    const w = 8 + r() * 8;
-    const d = 7 + r() * 7;
-    const rad = Math.hypot(w, d) / 2;
-    if (distToPolyline(x, z, ROAD) < ROAD_WIDTH + rad + 1.5) continue;
-    if (distToPolyline(x, z, RIVER) < 16 + rad) continue;
-    if (buildings.some((b) => Math.hypot(b.x - x, b.z - z) < rad + Math.hypot(b.w, b.d) / 2 + 3)) continue;
-    // หันตามถนนใกล้สุดคร่าว ๆ ให้ดูเป็นเมือง
-    const rot = Math.round((a + Math.PI / 2) / (Math.PI / 2)) * (Math.PI / 2) + (r() - 0.5) * 0.12;
-    const floors = 2 + Math.floor(r() * 5);
-    const n = buildings.length;
-    const style: BuildingStyle = n % 5 === 1 ? 'shelter' : n % 3 === 2 ? 'ruin' : 'solid';
-    const h = style === 'shelter' ? BUILDING.shelterHeight : floors * BUILDING.storey * (style === 'ruin' ? 0.6 : 1);
-    // ฐานตึกเท่ากับจุดต่ำสุดของพื้นใต้ตึก ตึกไม่ลอย
-    let y = Infinity;
-    for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) y = Math.min(y, t.heightAt(x + (px * w) / 2, z + (pz * d) / 2));
-    buildings.push({ key: `building-${n}`, x, z, w, d, h, rot, y, style, tone: r() });
-  }
-
-  for (const b of buildings) {
-    if (b.style === 'shelter') {
-      // ตึกโล่งข้างในมีประตู หลบหนาวได้ · ผนัง 4 ด้าน (ด้านหน้าเว้นช่องประตู) + หลังคา
-      const th = 0.35;
-      const hw = b.w / 2;
-      const hd = b.d / 2;
-      const c = Math.cos(b.rot);
-      const sn = Math.sin(b.rot);
-      const at = (lx: number, lz: number) => ({ x: b.x + lx * c + lz * sn, z: b.z - lx * sn + lz * c });
-      const wall = (lx: number, lz: number, hx: number, hz: number) => {
-        const p = at(lx, lz);
-        s.add({ x: p.x, z: p.z, hx, hz, rot: b.rot, y0: b.y - 1, y1: b.y + b.h, tag: b.key });
-      };
-      wall(0, hd - th / 2, hw, th / 2);
-      wall(-hw + th / 2, 0, th / 2, hd);
-      wall(hw - th / 2, 0, th / 2, hd);
-      const door = BUILDING.doorWidth / 2; // ครึ่งความกว้างช่องประตู
-      wall(-(hw + door) / 2, -hd + th / 2, (hw - door) / 2, th / 2);
-      wall((hw + door) / 2, -hd + th / 2, (hw - door) / 2, th / 2);
-      // คานเหนือประตู (กล้องชนได้ ตัวละครเดินลอดได้)
-      const top = at(0, -hd + th / 2);
-      s.add({ x: top.x, z: top.z, hx: door, hz: th / 2, rot: b.rot, y0: b.y + BUILDING.doorHeight, y1: b.y + b.h, tag: b.key });
-      s.add({ x: b.x, z: b.z, hx: hw, hz: hd, rot: b.rot, y0: b.y + b.h, y1: b.y + b.h + 0.3, tag: b.key });
-    } else {
-      s.add({ x: b.x, z: b.z, hx: b.w / 2, hz: b.d / 2, rot: b.rot, y0: b.y - 1, y1: b.y + b.h, tag: b.key });
+  const parts = new Map<string, TownBox[]>();
+  const items: TownLayout['items'] = [];
+  // ที่ว่างในเมืองวางบนพื้นตรงกลางที่ดิน (ของชิ้นเตี้ย ๆ พื้นลาดนิดหน่อยไม่เป็นไร)
+  const extras: TownExtra[] = planExtras().map((e) => ({ ...e, y: t.heightAt(e.x, e.z) }));
+  for (const e of extras) {
+    for (const bx of e.boxes) {
+      const w = toWorld(e, bx.x, bx.z);
+      s.add({ x: w.x, z: w.z, hx: bx.hx, hz: bx.hz, rot: e.rot, y0: e.y + bx.y0, y1: e.y + bx.y1, tag: e.key });
     }
   }
+  for (const p of planTown()) {
+    // ฐานตึกเท่ากับจุดต่ำสุดของพื้นใต้ตึก ตึกไม่ลอย
+    let y = Infinity;
+    for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) {
+      const w = toWorld(p, (px * p.w) / 2, (pz * p.d) / 2);
+      y = Math.min(y, t.heightAt(w.x, w.z));
+    }
+    const b: Building = { ...p, y };
+    buildings.push(b);
+    const { boxes, items: inRoom } = buildingParts(b);
+    parts.set(b.key, boxes);
+    for (const bx of boxes) {
+      const w = toWorld(b, bx.x, bx.z);
+      s.add({ x: w.x, z: w.z, hx: bx.hx, hz: bx.hz, rot: b.rot, y0: b.y + bx.y0, y1: b.y + bx.y1, tag: b.key });
+    }
+    // ฐานตึกใต้พื้นชั้นล่าง (พื้นลาดนิด ๆ จะไม่เห็นช่องใต้ตึก)
+    s.add({ x: b.x, z: b.z, hx: b.w / 2, hz: b.d / 2, rot: b.rot, y0: b.y - 1.5, y1: b.y, tag: b.key });
+    inRoom.forEach((it, k) => {
+      const w = toWorld(b, it.x, it.z);
+      items.push({ key: `${it.kind}@${b.key}-${k}`, kind: it.kind, x: w.x, y: b.y + it.y, z: w.z, special: it.special });
+    });
+  }
+  // ชิ้นพิเศษ: โทรศัพท์ในที่ทำการไปรษณีย์ กรอบรูปในบ้านหลังแรก (เดิมวางกลางเมือง)
+  const markSpecial = (type: string, kind: string) => {
+    const b = buildings.find((x) => x.type === type);
+    if (!b) return;
+    const w = toWorld(b, 0, -b.d / 2 + 2.5);
+    items.push({ key: `${kind}@${b.key}-special`, kind, x: w.x, y: b.y + 0.15, z: w.z, special: true });
+  };
+  markSpecial('postOffice', 'phone');
+  markSpecial('house', 'frame');
 
   // สะพานพัง: พื้นสะพานสองท่อน ขาดตรงกลาง มีเสาตอม่อ
   const bridge: BridgePart[] = [];
@@ -112,5 +94,50 @@ export function buildTown(t: Terrain, s: Structures): TownLayout {
     bridge.push({ x: px, z: pz, hx: 0.8, hz: 2.4, rot, y0: py0, y1: deckY - 0.6, kind: 'pillar' });
     s.add({ x: px, z: pz, hx: 0.8, hz: 2.4, rot, y0: py0, y1: deckY - 0.6, tag: 'bridge' });
   }
-  return { buildings, bridge };
+  return { buildings, parts, items, extras, bridge };
+}
+
+/** พิกัดโลกเป็นพิกัดในตึก (หรือในที่ดิน) */
+export function toLocal(b: { x: number; z: number; rot: number }, x: number, z: number): [number, number] {
+  return S.local({ x: b.x, z: b.z, hx: 0, hz: 0, rot: b.rot, y0: 0, y1: 0 }, x, z);
+}
+
+/** ตึกที่จุดนี้อยู่ข้างใน (ตึกหมุนตามถนน) */
+export function buildingAt(L: TownLayout, x: number, z: number, pad = 0): Building | null {
+  for (const b of L.buildings) {
+    if (Math.abs(x - b.x) > b.w + b.d || Math.abs(z - b.z) > b.w + b.d) continue;
+    const [lx, lz] = toLocal(b, x, z);
+    if (Math.abs(lx) < b.w / 2 + pad && Math.abs(lz) < b.d / 2 + pad) return b;
+  }
+  return null;
+}
+
+/**
+ * ต้นไม้ขึ้นตรงนี้ไม่ได้: ในตึกที่ยังมีหลังคา · หน้าประตูกับทางเดินเข้าตึก · ช่องบันได · หอส่งน้ำ สนามเด็กเล่น
+ * ซากตึกที่หลังคาหายแล้วต้นไม้ขึ้นข้างในได้ (พันปีผ่านไป ต้นไม้ขึ้นกลางห้อง ทะลุผนัง)
+ */
+export function treeBlocked(L: TownLayout, x: number, z: number): boolean {
+  for (const b of L.buildings) {
+    if (Math.abs(x - b.x) > b.w + b.d + 8 || Math.abs(z - b.z) > b.w + b.d + 8) continue;
+    const [lx, lz] = toLocal(b, x, z);
+    const hw = b.w / 2;
+    const hd = b.d / 2;
+    // ทางเดินจากถนนเข้าประตูหน้า
+    if (Math.abs(lx) < 2.4 && lz < -hd + 3.5 && lz > -hd - 6.5) return true;
+    if (Math.abs(lx) > hw + 1.2 || Math.abs(lz) > hd + 1.2) continue;
+    if (b.decay === 0) return true;
+    if (b.floors > 1 && lx > hw - 4.8) return true;
+  }
+  for (const e of L.extras) {
+    if (e.kind !== 'waterTower' && e.kind !== 'playground') continue;
+    const [lx, lz] = toLocal(e, x, z);
+    if (Math.abs(lx) < e.w / 2 + 1 && Math.abs(lz) < e.d / 2 + 1) return true;
+  }
+  return false;
+}
+
+/** หญ้าไม่ขึ้นในตึกที่ยังมีหลังคา (ซากที่หลังคาหายหญ้าขึ้นได้) */
+export function grassBlocked(L: TownLayout, x: number, z: number): boolean {
+  const b = buildingAt(L, x, z, 0.2);
+  return !!b && b.decay === 0;
 }

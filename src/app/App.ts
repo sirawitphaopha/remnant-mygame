@@ -23,7 +23,7 @@ import { REACH } from '../config/scale';
 import { Hud, type MapMarker } from '../ui/Hud';
 import { BigMap } from '../ui/BigMap';
 import { MapImage } from '../ui/MapImage';
-import { armViews, beltViews } from './hudView';
+import { beltViews } from './hudView';
 import { Tools, type ScanTarget } from './Tools';
 import { setLang, t, tf } from '../ui/strings';
 import { kind as kindOf } from '../core/catalog';
@@ -41,7 +41,7 @@ import { BodyFx, DeathScreen } from '../ui/BodyFx';
 import { remainsModel } from '../render/models/hero';
 import { Structures } from '../world/structures';
 import { buildCaves, caveAt, type Cave } from '../world/caves';
-import { buildTown, type TownLayout } from '../world/town';
+import { buildTown, buildingAt, grassBlocked, treeBlocked, type Building, type TownLayout } from '../world/town';
 import { Town } from '../render/Town';
 import { Fish } from '../render/Fish';
 import { Rain, ValleyFog } from '../render/Rain';
@@ -62,7 +62,7 @@ import { SettingsScreen, TitleScreen } from '../ui/Menus';
 import { forestDensity } from '../world/scatter';
 import { FLOWER_IDS, grassHeightAt } from '../world/flowers';
 import { scanKindOf, trunkRadius } from '../world/trees';
-import { LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from '../world/layout';
+import { LAKE, RIVER, RIVER_WIDTH, ROAD_WIDTH, TOWN, distToPolyline, distToRoads } from '../world/layout';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
 /** ป้ายปุ่มของแต่ละแขน (แขนบนขวา บนซ้าย ล่างขวา ล่างซ้าย) */
@@ -150,6 +150,8 @@ export class App {
   private lastStep = 0;
   /** อยู่ลึกในถ้ำแค่ไหน 0 = ข้างนอก 1 = ปลายถ้ำ (หรี่แสงแดดกับแสงฟ้า) */
   caveDepth = 0;
+  /** อยู่ในตึกแค่ไหน 0 ถึง 1 (แสงฟ้าข้างในหรี่ลง ข้างในมืดต้องใช้ไฟฉาย) */
+  indoor = 0;
   readonly bodyFx: BodyFx;
   readonly deathScreen: DeathScreen;
   /** ร่างที่เท่าไรแล้ว (ยานจำลองใหม่ทุกครั้งที่ตาย) */
@@ -236,16 +238,22 @@ export class App {
     this.scene.add(this.water.mesh);
     // เมืองวางก่อนป่า ต้นไม้กับขอนไม้จะไม่ขึ้นในตึก (เดิมต้นไม้ 7 ต้นขึ้นในตึก ลำต้นทะลุหลังคา)
     this.town = buildTown(this.terrain, this.structures);
-    const inBuilding = (x: number, z: number) =>
+    // ต้นไม้ไม่ขึ้นในตึกที่ยังมีหลังคา หน้าประตู ช่องบันได และในรถร้าง · ซากตึกหลังคาหายต้นไม้ขึ้นข้างในได้ (พันปี)
+    const placed = placeProps();
+    const vehicles = placed.filter((pp) => pp.kind === 'car' || pp.kind === 'bus');
+    const treeNo = (x: number, z: number) =>
       Math.hypot(x - fallSpot.x, z - fallSpot.z) < 18 ||
-      this.town.buildings.some((b) => Math.abs(x - b.x) < b.w / 2 + 6 && Math.abs(z - b.z) < b.d / 2 + 6 && Math.hypot(x - b.x, z - b.z) < Math.hypot(b.w, b.d) / 2 + 2);
-    this.vegetation = new Vegetation(this.terrain, this.q, inBuilding);
+      vehicles.some((v) => Math.hypot(x - v.x, z - v.z) < (v.kind === 'bus' ? 7.5 : 3.6)) ||
+      treeBlocked(this.town, x, z);
+    this.vegetation = new Vegetation(this.terrain, this.q, treeNo);
     this.scene.add(this.vegetation.group);
-    this.grass = new Grass(this.terrain, this.terrainMesh, this.q, inBuilding);
+    this.grass = new Grass(this.terrain, this.terrainMesh, this.q, (x, z) => Math.hypot(x - fallSpot.x, z - fallSpot.z) < 18 || grassBlocked(this.town, x, z));
     this.scene.add(this.grass.mesh);
     this.loadMs = Math.round(performance.now() - t0);
 
     this.scene.add(this.hero.root);
+    // ตัวละครรับเงาด้วย เข้าตึกแล้วตัวมืดตามห้อง (เดิมแดดส่องตัวทะลุหลังคา ตัวสว่างอยู่กลางห้องมืด)
+    this.hero.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.receiveShadow = true; });
     // ลำต้นไม้กับก้อนหินเป็นสิ่งกีดขวาง
     // ลำต้นชนตามขนาดจริงของแต่ละชนิด (scale = ความสูง ÷ 10)
     for (const set of this.vegetation.trees) {
@@ -268,7 +276,7 @@ export class App {
     }
 
     this.caves = buildCaves(this.terrain);
-    this.townView = new Town(this.town.buildings, this.town.bridge);
+    this.townView = new Town(this.town.buildings, this.town.parts, this.town.bridge, this.town.extras);
     this.scene.add(this.townView.group);
     this.cavesView = new Caves(this.caves);
     this.scene.add(this.cavesView.group);
@@ -295,7 +303,9 @@ export class App {
     this.rig = new CameraRig(this.camera);
     this.rig.snap(this.player);
 
-    this.props = new Props(placeProps(), (x, z) => this.terrain.heightAt(x, z), this.colliders, { x: SHIP.x, z: SHIP.z, y: this.terrain.heightAt(SHIP.x, SHIP.z) });
+    // ของข้างถนน + ของชิ้นเล็กในห้องของตึก (วางบนพื้นชั้นนั้น)
+    const roomItems = this.town.items.map((it) => ({ ...it, rot: (Math.abs(it.x * 7.3 + it.z * 3.1) % 6.28) }));
+    this.props = new Props(placed.concat(roomItems), (x, z) => this.terrain.heightAt(x, z), this.colliders, { x: SHIP.x, z: SHIP.z, y: this.terrain.heightAt(SHIP.x, SHIP.z) });
     this.scene.add(this.props.group);
     this.mapImage = new MapImage(this.terrain);
     this.mapImage.drawBoxes(this.structures.boxes);
@@ -671,8 +681,9 @@ export class App {
         let surface: Surface = 'grass';
         if (this.terrain.heightAt(p.x, p.z) < 2.1 && p.y < WORLD.waterLevel + 0.6) surface = 'water';
         else if (this.caveDepth > 0.05) surface = 'cave';
+        else if (this.buildingAt(p.x, p.z)) surface = 'wood';
         else if (p.y > this.terrain.heightAt(p.x, p.z) + 0.5) surface = 'rock';
-        else if (distToPolyline(p.x, p.z, ROAD) < ROAD_WIDTH) surface = 'road';
+        else if (distToRoads(p.x, p.z) < ROAD_WIDTH) surface = 'road';
         this.audio.step(surface, p.running);
       }
     }
@@ -1075,6 +1086,8 @@ export class App {
       loadRatio: loadRatioOf(this.loadout),
     });
     if (inp.wasPressed('KeyV')) this.rig.swapShoulder();
+    // ไฟอ่อนในโถ เปิดปิดได้ (ไว้ใช้ตอนกลางคืน)
+    if (inp.wasPressed('KeyL')) this.hero.toggleJarLight();
     this.updateBody(dt);
     if (this.dying) { inp.endFrame(); return; }
     this.tools.update(dt, (b) => inp.held(b), (b) => inp.pressedAny(b), this.camera.position, this.rig.viewDir());
@@ -1107,6 +1120,9 @@ export class App {
     const inCave = caveAt(this.caves, p.x, p.z);
     const under = inCave && p.y < this.terrain.heightAt(p.x, p.z) - 2 ? inCave.f : 0;
     this.caveDepth += (under - this.caveDepth) * Math.min(1, dt * 2);
+    // ในตึกมีหลังคาหรือพื้นชั้นบนเหนือหัว แสงฟ้าหรี่ลง (แดดโดนผนังกับหลังคาบังอยู่แล้วด้วยเงา)
+    const inB = this.buildingAt(p.x, p.z) && this.structures.roofOver(p.x, p.y, p.z) ? 1 : 0;
+    this.indoor += (inB - this.indoor) * Math.min(1, dt * 1.5);
     this.applyCaveDim();
     this.updateWeather(dt);
     this.cavesView.update(this.elapsed);
@@ -1146,14 +1162,13 @@ export class App {
       exhausted: p.stamina.exhausted,
       oxygen: this.elapsed - this.lastDrain < 3 || this.body.oxygen < 0.999 && this.body.draining ? this.body.oxygen : null,
       battery: light && light.on ? light.charge ?? 0 : null,
-      arms: armViews(this.loadout, name),
       belt: beltViews(this.loadout, name),
       markers: this.markers(),
       prompt: this.tools.scanning
         ? { key: ARM_KEY_LABEL[this.tools.scanArm](), text: this.tools.scanProgress < 0 ? t('scanNothing') : `${t('scanning')} ${Math.round(this.tools.scanProgress * 100)}%` }
         : this.interact ? { key: this.interact.key, text: this.interact.text }
-        // ขอล็อกเมาส์ไม่สำเร็จ บอกให้คลิกจอ (เดิมกล้องไม่หมุนเฉย ๆ ไม่มีอะไรบอก)
-        : !this.input.locked && this.input.lockFailed ? { key: '', text: t('clickToPlay') } : null,
+        // ป้ายคลิกจอตอนล็อกเมาส์ไม่สำเร็จเอาออกแล้ว (พี่กันสั่ง: บนจอไม่บอกเรื่องปุ่ม)
+        : null,
       reticle: this.aiming || this.tools.aiming,
       status: this.statusChips(),
       shoulder: this.rig.side,
@@ -1170,10 +1185,13 @@ export class App {
     const near = (o: THREE.Object3D, r: number) => (o.position.x - x) ** 2 + (o.position.z - z) ** 2 < r * r;
     for (const pp of this.props.all) {
       if (pp.taken) continue;
-      const big = pp.prop.kind === 'car' || pp.prop.kind === 'bus' || pp.prop.kind === 'lamp' || pp.prop.kind === 'sign' || pp.prop.kind === 'mailbox';
-      pp.object.visible = near(pp.object, big ? 650 : 140);
+      const k = pp.prop.kind;
+      // รถมองเห็นไกล · เสาไฟ ป้าย ตู้ไปรษณีย์ผอมบาง ไกลเกิน 260 ม. แทบไม่เห็น
+      // ของในห้องของตึก (มีความสูงชั้นกำกับ) เห็นแค่ตอนเข้าใกล้ตึก · เดิมวาดของในห้อง 180 ชิ้นทั้งเมือง ครั้งวาดขึ้นถึง 900
+      const r = k === 'car' || k === 'bus' ? 650 : k === 'lamp' || k === 'sign' || k === 'mailbox' ? 260 : pp.prop.y !== undefined ? 28 : 140;
+      pp.object.visible = near(pp.object, r);
     }
-    for (const g of this.townView.group.children) g.visible = near(g, 1300);
+    this.townView.cull(x, z);
   }
 
   /** ความเปียกของพื้นตอนนี้ (ตัวช่วยทดสอบดู) */
@@ -1185,7 +1203,12 @@ export class App {
   private applyCaveDim(): void {
     const dim = 1 - 0.96 * Math.min(1, this.caveDepth / 0.3);
     this.sun.intensity *= dim;
-    this.hemi.intensity *= dim;
+    this.hemi.intensity *= dim * (1 - 0.72 * this.indoor);
+  }
+
+  /** ตึกที่จุดนี้อยู่ข้างใน (ตึกหมุนตามแนวถนน) */
+  buildingAt(x: number, z: number): Building | null {
+    return buildingAt(this.town, x, z);
   }
 
   /** ฝน ฟ้าแลบฟ้าร้อง พื้นเปียก หมอกเช้า หยดน้ำบนโหล */
@@ -1193,8 +1216,11 @@ export class App {
     const p = this.player;
     const w = this.weather;
     const cam = this.camera.position;
-    const camRoof = this.structures.roofOver(cam.x, cam.y - 1.6, cam.z) || this.caveDepth > 0.2;
-    this.rain.update(dt, cam, w.rain, camRoof);
+    // กล้องในตึก: ฝนตกเฉพาะนอกตึกหลังนี้ · ใต้สะพานหรือในถ้ำ: ไม่เห็นสายฝนรอบตัว
+    const camIn = this.caveDepth > 0.2 ? null : this.buildingAt(cam.x, cam.z);
+    const hole = camIn ? { x: camIn.x, z: camIn.z, hx: camIn.w / 2 + 0.3, hz: camIn.d / 2 + 0.3, rot: camIn.rot } : null;
+    const camRoof = !hole && (this.structures.roofOver(cam.x, cam.y - 1.6, cam.z) || this.caveDepth > 0.2);
+    this.rain.update(dt, cam, w.rain, camRoof, hole);
     // พื้นค่อย ๆ เปียกตอนฝนตก ราว 40 วินาทีเปียกเต็ม แห้งช้ากว่า (ราว 3 นาที)
     WET.value = Math.max(0, Math.min(1, WET.value + (w.rain > 0.1 ? dt / 40 : -dt / 180)));
     this.valleyFog.update(dt, this.skyState.fog * (1 - 0.5 * w.rain), this.fog.color);

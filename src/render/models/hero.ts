@@ -81,6 +81,11 @@ function octopus(): THREE.Group {
   return g;
 }
 
+/** ถังออกซิเจนบนหลัง สีฟ้าโลหะเหมือนถังสำรองในมือ */
+const TANK = new THREE.MeshStandardMaterial({ color: 0x7fc4e0, roughness: 0.35, metalness: 0.35 });
+/** สายออกซิเจน ยางสีเข้ม */
+const HOSE = new THREE.MeshStandardMaterial({ color: 0x2a2e30, roughness: 0.8 });
+
 export class HeroModel {
   readonly root = new THREE.Group();
   /** ส่วนตัวทั้งหมด (หมุนก้มตอนว่าย) */
@@ -95,6 +100,12 @@ export class HeroModel {
   readonly legs: Leg[] = [];
   /** จุดถือของของแต่ละแขน: บนขวา บนซ้าย ล่างขวา ล่างซ้าย */
   readonly hands: THREE.Group[] = [];
+  /** ยกแขนข้างที่กำลังใช้อุปกรณ์ชี้ไปข้างหน้า 0 ถึง 1 (app/Tools.ts ตั้งค่าทุกเฟรม: ไฟฉายเปิด สแกน ยิงหมึก) */
+  readonly raise = [0, 0, 0, 0];
+  private raised = [0, 0, 0, 0];
+  /** ไฟในโถ แสงอ่อน ๆ ตอนกลางคืน เปิดปิดได้ (พี่กันขอ 23 ต.ค. 2569) */
+  readonly jarLight: THREE.PointLight;
+  private jarLightOn = false;
   private breath = 0;
 
   constructor() {
@@ -119,15 +130,34 @@ export class HeroModel {
     this.chestLight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.035, 0.02), LIGHT);
     this.chestLight.position.set(0, 0.44, -0.205);
     this.torso.add(this.chestLight);
-    // กระเป๋าหลังกับเครื่องกรองออกซิเจน
+    // กล่องคล้ายกระเป๋าบนหลัง มีถังออกซิเจนสองใบติดอยู่ สายจากหัวถังโค้งขึ้นข้ามไหล่เข้าโถแก้วที่หัว (พี่กันขอ 23 ต.ค. 2569)
     const pack = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), PANEL);
     pack.position.set(0, 0.36, 0.2);
     pack.castShadow = true;
     this.torso.add(pack);
     for (const s of [-1, 1]) {
-      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.36, 10), SUIT_DARK);
-      can.position.set(s * 0.11, 0.38, 0.3);
-      this.torso.add(can);
+      const tank = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.32, 6, 14), TANK);
+      tank.position.set(s * 0.1, 0.38, 0.33);
+      this.torso.add(tank);
+      // สายรัดถังกับกล่อง
+      for (const y of [0.27, 0.49]) {
+        const strap = new THREE.Mesh(new THREE.TorusGeometry(0.064, 0.008, 6, 16).rotateX(Math.PI / 2), SUIT_DARK);
+        strap.position.set(s * 0.1, y, 0.33);
+        this.torso.add(strap);
+      }
+      // วาล์วหัวถัง
+      const valve = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.05, 10), SUIT_DARK);
+      valve.position.set(s * 0.1, 0.62, 0.33);
+      this.torso.add(valve);
+      // สายออกซิเจนจากวาล์ว โค้งขึ้นข้างคอ เข้าฐานโถด้านหลัง
+      const hose = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(s * 0.1, 0.64, 0.33),
+        new THREE.Vector3(s * 0.12, 0.72, 0.31),
+        new THREE.Vector3(s * 0.13, 0.76, 0.22),
+        new THREE.Vector3(s * 0.11, 0.73, 0.12),
+        new THREE.Vector3(s * 0.08, 0.69, 0.1),
+      ]);
+      this.torso.add(new THREE.Mesh(new THREE.TubeGeometry(hose, 18, 0.014, 6, false), HOSE));
     }
 
     // หัว: คอ โหลแก้ว น้ำ ปลาหมึก
@@ -137,7 +167,7 @@ export class HeroModel {
     this.head.add(collar);
     this.jarWater = new THREE.Mesh(
       new THREE.SphereGeometry(0.2, 22, 16),
-      new THREE.MeshStandardMaterial({ color: 0x5fb3c8, transparent: true, opacity: 0.28, roughness: 0.1, depthWrite: false }),
+      new THREE.MeshStandardMaterial({ color: 0x5fb3c8, emissive: 0x7fd8f0, emissiveIntensity: 0, transparent: true, opacity: 0.28, roughness: 0.1, depthWrite: false }),
     );
     this.jarWater.position.y = 0.2;
     this.head.add(this.jarWater);
@@ -146,11 +176,15 @@ export class HeroModel {
     this.head.add(this.octo);
     this.jarGlass = new THREE.Mesh(
       new THREE.SphereGeometry(0.225, 26, 18),
-      new THREE.MeshStandardMaterial({ color: 0xe8f6fa, transparent: true, opacity: 0.2, roughness: 0.03, metalness: 0.1, depthWrite: false }),
+      new THREE.MeshStandardMaterial({ color: 0xe8f6fa, emissive: 0x8fe4f8, emissiveIntensity: 0, transparent: true, opacity: 0.2, roughness: 0.03, metalness: 0.1, depthWrite: false }),
     );
     this.jarGlass.position.y = 0.2;
     this.jarGlass.renderOrder = 3;
     this.head.add(this.jarGlass);
+    // ไฟอ่อนในโถ ส่องรอบตัวไม่ไกล (ปิดอยู่ตั้งต้น ความแรง 0 ไม่ต้องคอมไพล์ภาพใหม่ตอนเปิด)
+    this.jarLight = new THREE.PointLight(0xa8ecff, 0, 7, 2);
+    this.jarLight.position.y = 0.2;
+    this.head.add(this.jarLight);
     const lid = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.022, 8, 20).rotateX(Math.PI / 2), SUIT_DARK);
     lid.position.y = 0.04;
     this.head.add(lid);
@@ -201,6 +235,16 @@ export class HeroModel {
    * ขยับท่าตามสถานะ
    * @param phase จังหวะก้าว · speed ความเร็วแนวราบ
    */
+  /** เปิดปิดไฟในโถ · คืนสถานะใหม่ */
+  toggleJarLight(): boolean {
+    this.jarLightOn = !this.jarLightOn;
+    return this.jarLightOn;
+  }
+
+  get jarLit(): boolean {
+    return this.jarLightOn;
+  }
+
   pose(dt: number, state: 'ground' | 'air' | 'swim' | 'climb', phase: number, speed: number, running: boolean, time: number): void {
     OCTO_UNIFORMS.uTime.value = time;
     this.breath += dt;
@@ -252,6 +296,21 @@ export class HeroModel {
       bodyPitch = running ? -0.18 : -0.04 * amt;
       bodyY = 0.98 + Math.abs(c) * 0.035 * amt;
     }
+    // แขนที่กำลังใช้อุปกรณ์ยกชี้ไปข้างหน้า (ไฟฉายส่องจากมือ เครื่องสแกนกับปืนหมึกเล็งไปข้างหน้า) · ตอนปีนกับว่ายไม่ยก
+    const canRaise = state === 'ground' || state === 'air';
+    this.arms.forEach((a, i) => {
+      this.raised[i] += ((canRaise ? this.raise[i] : 0) - this.raised[i]) * Math.min(1, dt * 8);
+      const w = this.raised[i];
+      if (w < 0.01) return;
+      a.shoulder.rotation.x += ((a.lower ? 1.25 : 1.42) - a.shoulder.rotation.x) * w;
+      a.shoulder.rotation.z += (a.side * 0.08 - a.shoulder.rotation.z) * w;
+      a.elbow.rotation.x += (0.1 - a.elbow.rotation.x) * w;
+    });
+    // ไฟในโถค่อย ๆ สว่างและหรี่ น้ำในโถเรืองนิด ๆ
+    const want = this.jarLightOn ? 1.6 : 0;
+    this.jarLight.intensity += (want - this.jarLight.intensity) * Math.min(1, dt * 6);
+    (this.jarWater.material as THREE.MeshStandardMaterial).emissiveIntensity = this.jarLight.intensity * 0.5;
+    (this.jarGlass.material as THREE.MeshStandardMaterial).emissiveIntensity = this.jarLight.intensity * 0.35;
     this.body.rotation.x += (bodyPitch - this.body.rotation.x) * k;
     this.body.position.y += (bodyY - this.body.position.y) * k;
     // หายใจ

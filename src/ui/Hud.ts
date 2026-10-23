@@ -37,7 +37,6 @@ export interface HudView {
   oxygen: number | null;
   /** null = ไม่แสดง (โผล่เฉพาะตอนเปิดไฟฉาย) */
   battery: number | null;
-  arms: ArmView[];
   belt: SlotView[];
   markers: MapMarker[];
   prompt: { key: string; text: string } | null;
@@ -52,7 +51,6 @@ const MARKER_COLOR: Record<MarkerKind, string> = { ship: '#6ff0e0', death: '#ff7
 const COMPASS: [StrKey, number][] = [
   ['compassN', 0], ['compassNE', 45], ['compassE', 90], ['compassSE', 135], ['compassS', 180], ['compassSW', 225], ['compassW', 270], ['compassNW', 315],
 ];
-const ARM_NAMES: StrKey[] = ['armUR', 'armUL', 'armLR', 'armLL'];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, parent?: HTMLElement): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -67,17 +65,13 @@ export class Hud {
   private compass: HTMLDivElement;
   private compassMarks: { el: HTMLSpanElement; deg: number }[] = [];
   private mini: HTMLCanvasElement;
-  private miniHint: HTMLDivElement;
   private bars: Record<'stamina' | 'oxygen' | 'battery', { row: HTMLDivElement; fill: HTMLDivElement; label: HTMLSpanElement }>;
-  private armEls: HTMLDivElement[] = [];
   private slotEls: HTMLDivElement[] = [];
-  private beltHint: HTMLDivElement;
   private toastBox: HTMLDivElement;
   private statusBox: HTMLDivElement;
   private lastStatus = '';
   private promptEl: HTMLDivElement;
   private reticleEl: HTMLDivElement;
-  private lastArms = '';
   private lastBelt = '';
   private lastPrompt = '';
   /** until = NaN คือยังไม่เริ่มนับ (เกิดตอนหน้าจอซ้อนเปิด) เริ่มนับเมื่อกลับมาเห็นจอเกม */
@@ -107,7 +101,6 @@ export class Hud {
     const mm = el('div', 'minimap', this.root);
     this.mini = el('canvas', '', mm);
     this.mini.width = this.mini.height = 336;
-    this.miniHint = el('div', 'minimap-hint', this.root);
 
     const bars = el('div', 'bars', this.root);
     const mk = (cls: string) => {
@@ -119,12 +112,10 @@ export class Hud {
     };
     this.bars = { stamina: mk('stamina'), oxygen: mk('o2'), battery: mk('bat') };
 
+    // แถบล่างจอเหลือแค่ช่องของ 1 ถึง 9 (พี่กันสั่งเอาการ์ดแขนคลิกซ้าย คลิกขวา Q R กับบรรทัดอธิบายออก ให้จอโล่งที่สุด)
     const belt = el('div', 'belt', this.root);
-    const arms = el('div', 'arms', belt);
-    for (let i = 0; i < 4; i++) this.armEls.push(el('div', 'arm', arms));
     const hot = el('div', 'hotbar', belt);
     for (let i = 0; i < 9; i++) this.slotEls.push(el('div', 'slot', hot));
-    this.beltHint = el('div', 'belt-hint', belt);
 
     this.promptEl = el('div', 'prompt', this.root);
     this.promptEl.hidden = true;
@@ -144,12 +135,10 @@ export class Hud {
 
   private applyLang(): void {
     for (const m of this.compassMarks) if (m.el.dataset.key) m.el.textContent = t(m.el.dataset.key as StrKey);
-    this.miniHint.textContent = t('minimapHint');
     this.bars.stamina.label.textContent = t('stamina');
     this.bars.oxygen.label.textContent = t('oxygen');
     this.bars.battery.label.textContent = t('battery');
-    this.beltHint.textContent = t('beltHint');
-    this.lastArms = this.lastBelt = this.lastPrompt = this.lastStatus = '';
+    this.lastBelt = this.lastPrompt = this.lastStatus = '';
   }
 
   /** เวลาเกมล่าสุด (เรียกทุกเฟรมแม้หน้าจอซ้อนเปิด) · ข้อความสั้นที่เกิดตอนหน้าจอซ้อนเปิด เริ่มนับเวลาเมื่อกลับมาเห็นจอเกม (ข้อ 54 ในรายงานตรวจ) */
@@ -195,18 +184,6 @@ export class Hud {
     setBar(this.bars.oxygen, v.oxygen);
     setBar(this.bars.battery, v.battery);
 
-    // แขน (วาดใหม่เฉพาะตอนเปลี่ยน)
-    const armsKey = JSON.stringify(v.arms);
-    if (armsKey !== this.lastArms) {
-      this.lastArms = armsKey;
-      v.arms.forEach((a, i) => {
-        const e = this.armEls[i];
-        e.className = 'arm' + (a.main ? ' main' : '') + (a.active ? ' active' : '') + (a.empty ? ' empty' : '');
-        const key = a.key === 'keyLeft' || a.key === 'keyRight' ? t(a.key) : a.key;
-        const sub = `${t(ARM_NAMES[i])}${a.main ? ' · ' + t('main') : ''}${a.sub ? ' · ' + a.sub : ''}`;
-        e.innerHTML = `<kbd>${key}</kbd><span class="what">${a.empty ? t('empty') : a.name}<small>${sub}</small></span>`;
-      });
-    }
     const beltKey = JSON.stringify(v.belt);
     if (beltKey !== this.lastBelt) {
       this.lastBelt = beltKey;
@@ -226,7 +203,8 @@ export class Hud {
     if (promptKey !== this.lastPrompt) {
       this.lastPrompt = promptKey;
       this.promptEl.hidden = !v.prompt;
-      if (v.prompt) this.promptEl.innerHTML = v.prompt.key ? `<kbd>${v.prompt.key}</kbd> ${v.prompt.text}` : v.prompt.text;
+      // บนจอไม่บอกปุ่ม (พี่กันสั่ง: ปุ่มทั้งหมดอ่านได้ที่หน้าตั้งค่า) เหลือแต่สิ่งที่จะเกิดขึ้น
+      if (v.prompt) this.promptEl.textContent = v.prompt.text;
     }
     this.reticleEl.hidden = !v.reticle;
 

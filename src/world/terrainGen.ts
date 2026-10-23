@@ -1,4 +1,5 @@
 import { WORLD } from '../config/game';
+import { townDist, townWest, townZone, TOWN_FOREST } from './townZone';
 import { BRIDGE, CAVES, GORGE, LAKE, MOUNTAINS, REGIONS, RIVER, RIVER_WIDTH, ROADS, ROAD_WIDTH, SHIP, TOWN, distToPolyline, type RegionName } from './layout';
 import { Simplex2 } from './noise';
 
@@ -166,15 +167,16 @@ export class TerrainShaper {
     const gorge = gz * (1 - smooth(GORGE.halfWidth * 0.55, GORGE.halfWidth, dv));
     h += gorge * GORGE.depth * (0.85 + 0.15 * nz.noise(x / 80, z / 80));
 
-    // หุบที่ตั้งเมือง ราบ
+    // หุบที่ตั้งเมือง ลาดเบา · พันปีที่ไม่มีคนดูแล ดินตะกอนกับซากพังทับถม พื้นเป็นลอนนูนต่ำไม่ราบเรียบ
     const dt = Math.hypot(x - TOWN.x, z - TOWN.z);
-    h = lerp(TOWN.height + 0.6 * nz.noise(x / 50, z / 50), h, smooth(TOWN.radius * 0.7, TOWN.radius + 90, dt));
+    const settle = 1.1 * nz.noise(x / 46, z / 46) + 0.35 * this.detail.noise(x / 13 + 4, z / 13 - 7);
+    h = lerp(TOWN.height + settle, h, smooth(TOWN.radius * 0.7, TOWN.radius + 90, dt));
 
     // ทุ่งจอดยาน ราบ
     const ds = Math.hypot(x - SHIP.x, z - SHIP.z);
     h = lerp(SHIP.height, h, smooth(SHIP.radius, SHIP.radius + 60, ds));
 
-    // ไร่นารอบเมือง เกลี่ยให้ลาดเบา
+    // ทุ่งนาเก่ารอบเมือง ยังลาดเบา (ป่าขึ้นทับฝั่งที่ไม่ใช่ทุ่งแล้ว ดูที่ biomeAt)
     const farm = smooth(TOWN.radius * 2.6, TOWN.radius * 1.2, dt) * (1 - smooth(0.3, 0.8, north + edge));
     h = lerp(h, TOWN.height + (h - TOWN.height) * 0.35, farm);
 
@@ -245,8 +247,11 @@ export class TerrainShaper {
     const dv = this.riverDist(x, z);
     const dl = Math.hypot(x - LAKE.x, z - LAKE.z);
     if (h < water + 1.4 && (dv < RIVER_WIDTH + 24 || dl < LAKE.radius + 25)) return BIOME.shore;
-    const dt = Math.hypot(x - TOWN.x, z - TOWN.z);
-    if (dt < TOWN.radius * 0.85) return BIOME.town;
+    // เมืองเก่าพันปี: ใจกลางกับย่านบ้านมีต้นไม้ขึ้นรก · ฝั่งตะวันตกเป็นทุ่งนาเก่า (ทางเดินจากยาน) · ฝั่งอื่นป่ากลืนบ้านรอบนอก
+    const tz = townZone(x, z);
+    if (tz === 'core' || tz === 'res') return BIOME.town;
+    if (tz === 'field') return BIOME.farmland;
+    if (tz === 'forest') return BIOME.dense;
     const n1 = bn.noise(x / 70, z / 70);
     if (h > MOUNTAINS.snowLine + 45 * n1 && slope < 0.75) return BIOME.snow;
     if (slope > 0.6 + 0.06 * n1 && h > 25) return BIOME.rock;
@@ -264,8 +269,8 @@ export class TerrainShaper {
     }
     if (best === 'wetland') return h < water + 3.6 ? BIOME.wetland : BIOME.tallGrass;
     if (best) return BIOME[best];
-    // ไร่นารอบเมือง
-    if (dt < TOWN.radius * 2.5 + 60 * n1 && dv > 35) return BIOME.farmland;
+    // ทุ่งนาเก่าต่อจากเมืองไปทางตะวันตก ป่ายังไม่กลับมาเต็ม
+    if (townWest(x, z) > 0.6 && townDist(x, z) < TOWN_FOREST + 170 + 60 * n1 && dv > 35) return BIOME.farmland;
     // นอกเขต: ทุ่งหญ้าสลับดงป่า · ป่าทึบมากขึ้นทางตะวันตกและตีนเขา
     const forest = bn.fbm(x / 210 + 7, z / 210 - 3, 3) + 0.25 * smooth(-200, -700, x) + 0.3 * smooth(-200, -560, z);
     if (forest > 0.12) return BIOME.dense;
