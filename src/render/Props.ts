@@ -24,7 +24,7 @@ export class Props {
       let obj: THREE.Object3D;
       const y = heightAt(p.x, p.z);
       switch (p.kind) {
-        case 'car': obj = carModel(Number(p.key.split('-')[1])); break;
+        case 'car': obj = carModel(p.variant ?? 0); break;
         case 'bus': obj = busModel(); break;
         case 'lamp': obj = lampModel(); break;
         case 'mailbox': obj = mailboxModel(); break;

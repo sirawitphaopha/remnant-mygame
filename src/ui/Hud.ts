@@ -1,6 +1,7 @@
+import { WORLD } from '../config/game';
 import type { ExploreMap } from '../core/explore';
 import { ICONS } from './icons';
-import type { MapImage } from './MapImage';
+import { MAP_PX, type MapImage } from './MapImage';
 import { onLangChange, t, type StrKey } from './strings';
 
 export interface ArmView {
@@ -23,7 +24,7 @@ export interface SlotView {
 }
 
 export type MarkerKind = 'ship' | 'death' | 'oldBody' | 'bag';
-export interface MapMarker { kind: MarkerKind; x: number; z: number }
+export interface MapMarker { kind: MarkerKind; x: number; z: number; /** เลขร่าง (ซาก) ไว้เขียนป้ายบนแผนที่ใหญ่ */ n?: number }
 
 export interface HudView {
   yaw: number;
@@ -243,9 +244,9 @@ export class Hud {
     c.fillRect(0, 0, S, S);
     c.translate(S / 2, S / 2);
     c.rotate(v.yaw);
-    c.scale(pxPerM * 2, pxPerM * 2); // 1 จุดของภาพแผนที่ = 2 เมตร
+    c.scale(pxPerM * MAP_PX, pxPerM * MAP_PX); // 1 จุดของภาพแผนที่ = MAP_PX เมตร
     c.imageSmoothingEnabled = true;
-    c.drawImage(this.map.revealed, -(v.x + 500) / 2, -(v.z + 500) / 2);
+    c.drawImage(this.map.revealed, -(v.x + WORLD.half) / MAP_PX, -(v.z + WORLD.half) / MAP_PX);
     c.restore();
     // เครื่องหมาย
     for (const m of v.markers) {

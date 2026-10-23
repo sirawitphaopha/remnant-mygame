@@ -1,51 +1,110 @@
-// ผังโลก 1 × 1 กม. · พิกัด x ไปทางตะวันออก, z ไปทางใต้ (ทิศเหนือคือ -z)
-// จุดสำคัญวางเองทีละจุด ส่วนภูเขากับป่าให้สัญญาณรบกวนปั้น
+// ผังโลก 3 × 3 กม. (รอบสอง) · พิกัด x ไปทางตะวันออก, z ไปทางใต้ (ทิศเหนือคือ -z) · ขอบแมพ ±1500
+// จุดสำคัญวางเองทีละจุดตามผังใน docs/PLAN-R2.md ส่วนรูปร่างภูเขาและป่าให้สัญญาณรบกวนปั้น
+//
+//  เหนือ   ▲▲▲ เทือกเขาสูง ยอดหิมะ 650 ถึง 800 ม. · ถ้ำหินปูนที่ตีนเขา ▲▲▲
+//          ป่าสนยักษ์ (ตีนเขาตะวันตก)   │แม่น้ำ│   ป่าผสมผลัดใบ
+//  ตะวันตก ป่าทึบ หมู่บ้านกลางป่า       │หุบป่า│   เนินคลื่น ทุ่งดอกไม้ ทุ่งหญ้าสูง
+//          ถ้ำเหมืองเก่าในหน้าผา         │ดิบชื้น│
+//          ━━━━━━━━━ ถนนหลวง ตะวันตก ตะวันออก ━ สะพานพัง ━━━━━━━━━
+//          ทุ่งจอดยาน · ป่าที่เคยเป็นไร่   เมืองริมแม่น้ำ ไร่นารอบเมือง
+//  ใต้                                    ทะเลสาบ ที่ลุ่มน้ำ
 
 export interface P2 { x: number; z: number }
 
-/** ยานกับจุดเกิด · ที่ราบเล็กทางตะวันตกเฉียงใต้ */
-export const SHIP: P2 & { radius: number; height: number } = { x: -200, z: 210, radius: 22, height: 11 };
-/** ระยะรอบยาน: กด E เข้ายาน · อุ่นร่างกาย (ครอบจุดเกิดใหม่ เกิดตอนกลางคืนจะได้ไม่หนาวทันที) */
+/** ยานกับจุดเกิด · ทุ่งโล่งชายป่าทางตะวันตกเฉียงใต้ ห่างเมืองราว 1 กม. */
+export const SHIP: P2 & { radius: number; height: number } = { x: -1000, z: 860, radius: 30, height: 22 };
 /** รัศมีตัวยาน (ขอบจาน) ตามโมเดลใน render/models/props.ts */
 export const SHIP_HULL_RADIUS = 5.25;
+/** ระยะรอบยาน: กด E เข้ายาน · อุ่นร่างกาย (ครอบจุดเกิดใหม่ เกิดตอนกลางคืนจะได้ไม่หนาวทันที) */
 export const SHIP_ENTER_RADIUS = SHIP_HULL_RADIUS + 3.75;
 export const SHIP_WARM_RADIUS = SHIP_HULL_RADIUS + 10.75;
-export const SPAWN_POINT: P2 & { heading: number } = { x: -196, z: 196, heading: Math.PI * 0.8 };
+export const SPAWN_POINT: P2 & { heading: number } = { x: SHIP.x + 4, z: SHIP.z - 14, heading: Math.PI * 0.8 };
 
-/** เมืองพังในหุบเขา */
-export const TOWN: P2 & { radius: number; height: number } = { x: 40, z: -10, radius: 95, height: 7 };
+/** เมืองในหุบริมแม่น้ำ ไร่นารอบเมือง */
+export const TOWN: P2 & { radius: number; height: number } = { x: 40, z: 820, radius: 170, height: 16 };
 
-/** แม่น้ำ ไหลจากภูเขาทิศเหนือ ผ่านข้างเมือง ลงทะเลสาบทางตะวันออกเฉียงใต้ */
+/**
+ * แม่น้ำสายหลัก ไหลจากเทือกเขาทิศเหนือ ผ่านหุบป่าดิบชื้น เลียบเมืองด้านตะวันออก ลงทะเลสาบทิศใต้
+ * ผิวน้ำทั้งแมพอยู่ระดับเดียว (WORLD.waterLevel) แม่น้ำจึงกัดหุบลงถึงระดับน้ำตลอดสาย
+ */
 export const RIVER: P2[] = [
-  { x: -40, z: -500 }, { x: -20, z: -390 }, { x: 30, z: -300 }, { x: 110, z: -210 },
-  { x: 160, z: -120 }, { x: 170, z: -30 }, { x: 150, z: 60 }, { x: 175, z: 150 }, { x: 235, z: 225 },
+  { x: -60, z: -1500 }, { x: -40, z: -1250 }, { x: 10, z: -1020 }, { x: 40, z: -800 }, { x: 90, z: -560 },
+  { x: 120, z: -330 }, { x: 150, z: -100 }, { x: 175, z: 140 }, { x: 205, z: 380 }, { x: 240, z: 600 },
+  { x: 275, z: 820 }, { x: 330, z: 990 }, { x: 430, z: 1100 },
 ];
-export const RIVER_WIDTH = 7;
+export const RIVER_WIDTH = 9;
 
-/** ทะเลสาบ */
-export const LAKE: P2 & { radius: number } = { x: 265, z: 265, radius: 80 };
+/** ทะเลสาบทิศใต้ */
+export const LAKE: P2 & { radius: number } = { x: 560, z: 1180, radius: 190 };
 
-/** ถนนเก่า จากใกล้ยาน เข้าเมือง ข้ามสะพาน ออกทางตะวันออก */
-export const ROAD: P2[] = [
-  { x: -230, z: 260 }, { x: -170, z: 180 }, { x: -110, z: 110 }, { x: -50, z: 50 },
-  { x: 10, z: 0 }, { x: 90, z: -40 }, { x: 165, z: -70 }, { x: 240, z: -100 }, { x: 330, z: -140 },
+/** หุบป่าดิบชื้น: ช่วงแม่น้ำที่ไหลในหุบลึก ผาสองฝั่ง อุ่นและชื้นกว่าที่อื่น */
+export const GORGE = { zFrom: -640, zTo: -60, depth: 55, halfWidth: 230 } as const;
+
+/** เทือกเขาทิศเหนือ เริ่มชันที่ z นี้ ยอดสูง 650 ถึง 800 ม. · หิมะเหนือราว 550 ม. */
+export const MOUNTAINS = { foot: -520, crest: -1150, peak: 860, snowLine: 550 } as const;
+
+/**
+ * ถนน · สายแรกคือถนนหลวงตะวันตกถึงตะวันออก (มีรถร้างเรียง มีสะพานพังข้ามแม่น้ำ)
+ * สายสองแยกเข้าเมือง · สายสามจากทุ่งจอดยานขึ้นถนนหลวง
+ */
+export const ROADS: P2[][] = [
+  [
+    { x: -1500, z: 520 }, { x: -1200, z: 500 }, { x: -900, z: 470 }, { x: -600, z: 455 }, { x: -300, z: 470 },
+    { x: 0, z: 480 }, { x: 205, z: 470 }, { x: 420, z: 440 }, { x: 700, z: 400 }, { x: 1000, z: 380 }, { x: 1500, z: 350 },
+  ],
+  [{ x: 0, z: 480 }, { x: 15, z: 620 }, { x: 40, z: 760 }, { x: 45, z: 900 }],
+  [{ x: -990, z: 820 }, { x: -960, z: 680 }, { x: -930, z: 540 }, { x: -900, z: 470 }],
 ];
+/** ถนนหลวง (ใช้วางรถร้างกับสะพาน) */
+export const ROAD = ROADS[0];
 export const ROAD_WIDTH = 4.5;
 
-/** สะพานพัง ตรงที่ถนนข้ามแม่น้ำ */
-export const BRIDGE: P2 & { angle: number } = { x: 163, z: -69, angle: Math.atan2(-30, 75) };
+/** จุดตัดของเส้นสองเส้น (ช่วงแรกที่ตัดกัน) พร้อมมุมของเส้นแรกตรงนั้น */
+function crossing(a: P2[], b: P2[]): P2 & { angle: number } {
+  for (let i = 0; i < a.length - 1; i++) {
+    for (let j = 0; j < b.length - 1; j++) {
+      const p = a[i], r = { x: a[i + 1].x - p.x, z: a[i + 1].z - p.z };
+      const q = b[j], s = { x: b[j + 1].x - q.x, z: b[j + 1].z - q.z };
+      const den = r.x * s.z - r.z * s.x;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((q.x - p.x) * s.z - (q.z - p.z) * s.x) / den;
+      const u = ((q.x - p.x) * r.z - (q.z - p.z) * r.x) / den;
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return { x: p.x + r.x * t, z: p.z + r.z * t, angle: Math.atan2(r.z, r.x) };
+    }
+  }
+  throw new Error('ถนนหลวงไม่ตัดแม่น้ำ');
+}
+
+/** สะพานพัง ตรงที่ถนนหลวงข้ามแม่น้ำ (คำนวณจุดตัดจริง) · มุมตามแนวถนนช่วงนั้น */
+export const BRIDGE: P2 & { angle: number } = crossing(ROADS[0], RIVER);
 
 /**
  * ถ้ำ 2 แห่ง · (x, z) คือปากถ้ำที่ตีนหน้าผา · ปากถ้ำหันออกทาง dir (เรเดียน ทิศเดียวกับ heading ของตัวละคร)
  * อุโมงค์เจาะเข้าไปในเนินข้างหลังปากถ้ำ ลึก depth เมตร
+ * แห่งแรก ถ้ำหินปูนที่ตีนเทือกเขาเหนือ (ภาพวาดรอยมือ ก๊าซพิษ) · แห่งสอง ถ้ำเหมืองเก่าในหน้าผากลางป่าตะวันตก (เห็ดเรืองแสง)
  */
 export const CAVES: (P2 & { dir: number; depth: number })[] = [
-  { x: -155, z: -222, dir: Math.PI * 0.95, depth: 70 },
-  { x: 305, z: 40, dir: Math.PI * 0.5, depth: 55 },
+  { x: 430, z: -600, dir: Math.PI, depth: 70 },
+  { x: -1040, z: 140, dir: -Math.PI / 2, depth: 55 },
 ];
 
-/** ป่าลึกที่มีสัตว์ดุ ทางตะวันตกเฉียงเหนือ */
-export const DEEP_FOREST: P2 & { radius: number } = { x: -260, z: -120, radius: 170 };
+/** ป่าลึกที่มีสัตว์ดุ (ป่าทึบตะวันตก) */
+export const DEEP_FOREST: P2 & { radius: number } = { x: -700, z: -150, radius: 430 };
+
+/**
+ * เขตป่าและทุ่ง (ศูนย์กลาง รัศมีตามแกน) · biomes.ts ผสมขอบด้วยสัญญาณรบกวน ขอบจึงไม่เป็นวงรี
+ * ป่าที่เคยเป็นไร่ อยู่ระหว่างทุ่งจอดยานกับเมือง เดินจากยานเข้าเมืองจะผ่านแถวสวนผลไม้เก่า
+ */
+export const REGIONS = {
+  redwood: { x: -950, z: -650, rx: 520, rz: 330 },
+  dense: { x: -650, z: -80, rx: 520, rz: 330 },
+  orchard: { x: -480, z: 760, rx: 330, rz: 230 },
+  deciduous: { x: 850, z: -420, rx: 520, rz: 330 },
+  flowers: { x: 820, z: 120, rx: 420, rz: 200 },
+  tallGrass: { x: 700, z: 620, rx: 380, rz: 170 },
+  wetland: { x: 560, z: 1180, rx: 380, rz: 260 },
+} as const;
+export type RegionName = keyof typeof REGIONS;
 
 export function distToPolyline(x: number, z: number, pts: P2[]): number {
   let best = Infinity;
@@ -63,4 +122,11 @@ export function distToPolyline(x: number, z: number, pts: P2[]): number {
     if (d < best) best = d;
   }
   return Math.sqrt(best);
+}
+
+/** ระยะถึงถนนที่ใกล้ที่สุด (ทุกสาย) */
+export function distToRoads(x: number, z: number): number {
+  let best = Infinity;
+  for (const r of ROADS) best = Math.min(best, distToPolyline(x, z, r));
+  return best;
 }

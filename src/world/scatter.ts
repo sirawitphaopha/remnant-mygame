@@ -1,5 +1,6 @@
 import { WORLD } from '../config/game';
-import { CAVES, DEEP_FOREST, RIVER, ROAD, ROAD_WIDTH, SHIP, TOWN, distToPolyline } from './layout';
+import { CAVES, RIVER, ROAD_WIDTH, SHIP, distToPolyline, distToRoads } from './layout';
+import { BIOME } from './terrainGen';
 import { Simplex2, hash2 } from './noise';
 import { smooth, type Terrain } from './Terrain';
 
@@ -23,30 +24,48 @@ export interface TreeSet {
 const forestNoise = new Simplex2(WORLD.seed + 101);
 const kindNoise = new Simplex2(WORLD.seed + 202);
 
-/** ความหนาแน่นป่าที่จุดนั้น 0 ถึง 1 (ใช้ทั้งต้นไม้ พืชเล็ก และหญ้า) */
+/**
+ * ความหนาแน่นป่าพื้นฐานของแต่ละชนิดพื้นที่ (BIOME) · ป่าดิบชื้นกับป่าทึบแน่นสุด ทุ่งโล่งมีไม้เดี่ยวประปราย
+ * ช่วง 4 ปลูกต้นไม้ 19 ชนิดตามป่าแต่ละแบบแทนชุดนี้
+ */
+const BIOME_FOREST: number[] = [];
+BIOME_FOREST[BIOME.water] = 0;
+BIOME_FOREST[BIOME.shore] = 0.06;
+BIOME_FOREST[BIOME.meadow] = 0.07;
+BIOME_FOREST[BIOME.flowers] = 0.03;
+BIOME_FOREST[BIOME.tallGrass] = 0.04;
+BIOME_FOREST[BIOME.farmland] = 0.02;
+BIOME_FOREST[BIOME.wetland] = 0.12;
+BIOME_FOREST[BIOME.town] = 0.1;
+BIOME_FOREST[BIOME.redwood] = 0.7;
+BIOME_FOREST[BIOME.rainforest] = 0.95;
+BIOME_FOREST[BIOME.deciduous] = 0.72;
+BIOME_FOREST[BIOME.orchard] = 0.6;
+BIOME_FOREST[BIOME.dense] = 0.88;
+BIOME_FOREST[BIOME.alpine] = 0.12;
+BIOME_FOREST[BIOME.rock] = 0.04;
+BIOME_FOREST[BIOME.snow] = 0;
+
+/** ความหนาแน่นป่าที่จุดนั้น 0 ถึง 1 (ใช้ทั้งต้นไม้ พืชเล็ก หญ้า เสียง และสัตว์) */
 export function forestDensity(t: Terrain, x: number, z: number): number {
   const h = t.heightAt(x, z);
   if (h < WORLD.waterLevel + 0.4) return 0;
-  let d = smooth(-0.2, 0.4, forestNoise.fbm(x / 160, z / 160, 3));
-  const deep = 1 - smooth(DEEP_FOREST.radius * 0.6, DEEP_FOREST.radius, Math.hypot(x - DEEP_FOREST.x, z - DEEP_FOREST.z));
-  d = Math.max(d, deep * 0.95);
-  d *= 1 - smooth(70, 120, h) * 0.8; // ยอดเขาสูงต้นไม้บาง
-  const dTown = Math.hypot(x - TOWN.x, z - TOWN.z);
-  d *= 0.25 + 0.75 * smooth(TOWN.radius * 0.4, TOWN.radius * 1.1, dTown); // ในเมืองมีต้นไม้ขึ้นแทรกนิดหน่อย
-  return d;
+  const base = BIOME_FOREST[t.biomeAt(x, z)];
+  // ช่องว่างกลางป่า ดงหนาสลับโปร่ง
+  return base * (0.6 + 0.4 * smooth(-0.5, 0.35, forestNoise.fbm(x / 160, z / 160, 3)));
 }
 
 /** ตรงนี้วางของได้ไหม (ไม่อยู่บนถนน น้ำ หน้าผา ที่จอดยาน ปากถ้ำ) */
 export function canPlace(t: Terrain, x: number, z: number, maxSlope: number, roadGap: number): boolean {
   if (t.heightAt(x, z) < WORLD.waterLevel + 0.3) return false;
   if (t.slopeAt(x, z) > maxSlope) return false;
-  if (distToPolyline(x, z, ROAD) < ROAD_WIDTH + roadGap) return false;
+  if (distToRoads(x, z) < ROAD_WIDTH + roadGap) return false;
   if (Math.hypot(x - SHIP.x, z - SHIP.z) < SHIP.radius + 8) return false;
   for (const c of CAVES) if (Math.hypot(x - c.x, z - c.z) < 14) return false;
   return true;
 }
 
-/** ต้นไม้ทั้งแมพ · คำนวณครั้งเดียว ผลเดิมทุกครั้ง */
+/** ต้นไม้ทั้งแมพ · คำนวณครั้งเดียว ผลเดิมทุกครั้ง · ชนิดต้นตามชนิดพื้นที่ */
 export function scatterTrees(t: Terrain): TreeSet[] {
   const cell = 7;
   const sets: Record<TreeKind, Placed[]> = { pine: [], oak: [], birch: [], dead: [] };
@@ -60,15 +79,21 @@ export function scatterTrees(t: Terrain): TreeSet[] {
       if (r1 > dens * 0.85) continue;
       if (!canPlace(t, x, z, 0.32, 3)) continue;
       const h = t.heightAt(x, z);
+      const b = t.biomeAt(x, z);
       const k = kindNoise.noise(x / 90, z / 90);
-      const nearRiver = distToPolyline(x, z, RIVER) < 40;
-      let kind: TreeKind;
       const r2 = hash2(i, j, 4);
+      let scale = 0.75 + 0.6 * hash2(i, j, 6);
+      let kind: TreeKind;
       if (r2 < 0.05) kind = 'dead';
-      else if (h > 45 || k > 0.25) kind = 'pine';
-      else if (nearRiver || k < -0.35) kind = 'birch';
+      else if (b === BIOME.redwood) { kind = 'pine'; scale *= 1.7; }
+      else if (b === BIOME.alpine || h > 300) kind = 'pine';
+      else if (b === BIOME.rainforest) { kind = 'oak'; scale *= 1.3; }
+      else if (b === BIOME.deciduous) kind = k > 0.1 ? 'birch' : 'oak';
+      else if (b === BIOME.wetland || b === BIOME.shore || distToPolyline(x, z, RIVER) < 40) kind = 'birch';
+      else if (b === BIOME.orchard) { kind = 'oak'; scale *= 0.7; }
+      else if (k > 0.25) kind = 'pine';
       else kind = r2 < 0.55 ? 'oak' : 'pine';
-      sets[kind].push({ x, y: h, z, rot: hash2(i, j, 5) * Math.PI * 2, scale: 0.75 + 0.6 * hash2(i, j, 6) });
+      sets[kind].push({ x, y: h, z, rot: hash2(i, j, 5) * Math.PI * 2, scale });
     }
   }
   return TREE_KINDS.map((kind) => ({ kind, items: sets[kind] }));
@@ -84,7 +109,9 @@ export function scatterRocks(t: Terrain): Placed[] {
       const x = -WORLD.half + (i + hash2(i, j, 11)) * cell;
       const z = -WORLD.half + (j + hash2(i, j, 12)) * cell;
       const slope = t.slopeAt(x, z);
-      const chance = 0.12 + slope * 1.2 + smooth(30, 80, t.heightAt(x, z)) * 0.3;
+      const b = t.biomeAt(x, z);
+      if (b === BIOME.snow || b === BIOME.town) continue;
+      const chance = 0.08 + slope * 0.9 + smooth(60, 300, t.heightAt(x, z)) * 0.15 + (b === BIOME.rock ? 0.25 : 0);
       if (hash2(i, j, 13) > chance) continue;
       if (!canPlace(t, x, z, 0.75, 2)) continue;
       out.push({ x, y: t.heightAt(x, z), z, rot: hash2(i, j, 14) * Math.PI * 2, scale: 0.5 + 2.2 * Math.pow(hash2(i, j, 15), 2) });
@@ -113,6 +140,10 @@ export function scatterPlants(t: Terrain, cx: number, cz: number, radius: number
       const r = hash2(i, j, 23);
       if (r > 0.42) continue;
       if (!canPlace(t, x, z, 0.5, 0.5)) continue;
+      // บนหิมะกับหน้าผาไม่มีพืช · ทุ่งหญ้าบนเขาบางลง
+      const b = t.biomeAt(x, z);
+      if (b === BIOME.snow || b === BIOME.rock || b === BIOME.town) continue;
+      if (b === BIOME.alpine && r > 0.12) continue;
       const dens = forestDensity(t, x, z);
       const pick = hash2(i, j, 24);
       let kind: PlantKind;
@@ -130,10 +161,14 @@ export function grassDensity(t: Terrain, x: number, z: number): number {
   if (h < WORLD.waterLevel + 0.15) return 0;
   const slope = t.slopeAt(x, z);
   if (slope > 0.38) return 0;
-  const road = distToPolyline(x, z, ROAD);
+  const road = distToRoads(x, z);
   let d = 1 - smooth(0.2, 0.38, slope);
   d *= 0.15 + 0.85 * smooth(ROAD_WIDTH * 0.55, ROAD_WIDTH + 1.5, road); // หญ้าขึ้นแทรกถนนพังบ้าง
   d *= 1 - 0.55 * forestDensity(t, x, z);
-  d *= 1 - smooth(80, 130, h);
+  // บนเขาหญ้าเตี้ยบางลงจนหมดที่แนวหิมะ
+  d *= 1 - smooth(350, 560, h) * 0.85;
+  const b = t.biomeAt(x, z);
+  if (b === BIOME.snow) return 0;
+  if (b === BIOME.rock) d *= 0.15;
   return d;
 }

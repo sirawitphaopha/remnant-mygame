@@ -1,6 +1,6 @@
 import { BUILDING } from '../config/scale';
 import { WORLD } from '../config/game';
-import { BRIDGE, RIVER, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from './layout';
+import { BRIDGE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from './layout';
 import { rng } from './noise';
 import type { Structures } from './structures';
 import type { Terrain } from './Terrain';
@@ -90,20 +90,24 @@ export function buildTown(t: Terrain, s: Structures): TownLayout {
   const dirX = Math.cos(BRIDGE.angle);
   const dirZ = Math.sin(BRIDGE.angle);
   const rot = -BRIDGE.angle;
-  const deckY = Math.max(t.heightAt(BRIDGE.x - dirX * 20, BRIDGE.z - dirZ * 20), t.heightAt(BRIDGE.x + dirX * 20, BRIDGE.z + dirZ * 20), WORLD.waterLevel + 2);
+  // พื้นสะพานเท่าคันดินหัวสะพาน (terrainGen ปั้นคันดินถึงห่างแม่น้ำ RIVER_WIDTH + 6 ม.) ปลายสะพานจมคันดินเล็กน้อย เดินขึ้นได้ราบ
+  const reach = RIVER_WIDTH + 14;
+  const half = (reach - 2) / 2;
+  const deckY = Math.max(t.heightAt(BRIDGE.x - dirX * (reach + 3), BRIDGE.z - dirZ * (reach + 3)), t.heightAt(BRIDGE.x + dirX * (reach + 3), BRIDGE.z + dirZ * (reach + 3)), WORLD.waterLevel + 2);
   for (const side of [-1, 1]) {
-    const cx = BRIDGE.x + dirX * side * 10.5;
-    const cz = BRIDGE.z + dirZ * side * 10.5;
-    bridge.push({ x: cx, z: cz, hx: 8, hz: 3.2, rot, y0: deckY - 0.6, y1: deckY, kind: 'deck' });
-    s.add({ x: cx, z: cz, hx: 8, hz: 3.2, rot, y0: deckY - 0.6, y1: deckY, tag: 'bridge' });
+    // ขาดตรงกลาง 4 ม.
+    const cx = BRIDGE.x + dirX * side * (2 + half);
+    const cz = BRIDGE.z + dirZ * side * (2 + half);
+    bridge.push({ x: cx, z: cz, hx: half, hz: 3.2, rot, y0: deckY - 0.6, y1: deckY, kind: 'deck' });
+    s.add({ x: cx, z: cz, hx: half, hz: 3.2, rot, y0: deckY - 0.6, y1: deckY, tag: 'bridge' });
     for (const rail of [-1, 1]) {
       const rx = cx - dirZ * rail * 3.05;
       const rz = cz + dirX * rail * 3.05;
-      bridge.push({ x: rx, z: rz, hx: 8, hz: 0.12, rot, y0: deckY, y1: deckY + 1, kind: 'rail' });
-      s.add({ x: rx, z: rz, hx: 8, hz: 0.12, rot, y0: deckY, y1: deckY + 1, tag: 'bridge' });
+      bridge.push({ x: rx, z: rz, hx: half, hz: 0.12, rot, y0: deckY, y1: deckY + 1, kind: 'rail' });
+      s.add({ x: rx, z: rz, hx: half, hz: 0.12, rot, y0: deckY, y1: deckY + 1, tag: 'bridge' });
     }
-    const px = BRIDGE.x + dirX * side * 5;
-    const pz = BRIDGE.z + dirZ * side * 5;
+    const px = BRIDGE.x + dirX * side * 7;
+    const pz = BRIDGE.z + dirZ * side * 7;
     const py0 = t.heightAt(px, pz) - 1;
     bridge.push({ x: px, z: pz, hx: 0.8, hz: 2.4, rot, y0: py0, y1: deckY - 0.6, kind: 'pillar' });
     s.add({ x: px, z: pz, hx: 0.8, hz: 2.4, rot, y0: py0, y1: deckY - 0.6, tag: 'bridge' });

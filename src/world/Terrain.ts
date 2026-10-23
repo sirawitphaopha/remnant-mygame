@@ -1,113 +1,27 @@
 import { WORLD } from '../config/game';
 import type { Ground } from './Ground';
-import { CAVES, LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, SHIP, TOWN, distToPolyline } from './layout';
-import { Simplex2 } from './noise';
+import { BIOME_STEP, HEIGHT_STEP, generateTerrain, smooth, type BiomeId, type TerrainData } from './terrainGen';
 
-export const smooth = (a: number, b: number, x: number): number => {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
+export { smooth };
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 /**
- * ภูมิประเทศทั้งแมพ · คำนวณครั้งเดียวตอนเริ่มเป็นตารางความสูงทุก 2 เมตร
- * แล้วอ่านแบบเฉลี่ยระหว่างจุด (เร็วพอให้ตัวละคร กล้อง และการวางต้นไม้เรียกได้บ่อย ๆ)
+ * ภูมิประเทศทั้งแมพ · ตารางความสูงทุก 2 เมตร กับตารางชนิดพื้นที่ทุก 8 เมตร
+ * ตอนเปิดเกมสร้างใน Web Worker (terrain.worker.ts) แล้วส่งตารางเข้ามา · เทสสร้างตรงในเธรดเดียวกัน
+ * อ่านแบบเฉลี่ยระหว่างจุด (เร็วพอให้ตัวละคร กล้อง และการวางต้นไม้เรียกได้บ่อย ๆ)
  */
 export class Terrain implements Ground {
-  static readonly STEP = 2;
+  static readonly STEP = HEIGHT_STEP;
   readonly n: number;
   readonly heights: Float32Array;
-  private noise = new Simplex2(WORLD.seed);
-  private detail = new Simplex2(WORLD.seed + 7);
+  readonly bn: number;
+  readonly biomes: Uint8Array;
 
-  /** ความสูงพื้นตรงปากถ้ำแต่ละแห่ง (คิดก่อนปั้นเนินถ้ำ) */
-  private caveBase: number[];
-
-  constructor() {
-    this.caveBase = CAVES.map((c) => this.shapeBase(c.x, c.z));
-    const step = Terrain.STEP;
-    this.n = WORLD.size / step + 1;
-    this.heights = new Float32Array(this.n * this.n);
-    for (let j = 0; j < this.n; j++) {
-      for (let i = 0; i < this.n; i++) {
-        this.heights[j * this.n + i] = this.shape(-WORLD.half + i * step, -WORLD.half + j * step);
-      }
-    }
-  }
-
-  /** ความสูงเนินพื้นฐาน (ก่อนมีภูเขา เมือง ถนน แม่น้ำ) */
-  private hills(x: number, z: number): number {
-    return 9 + 9 * this.noise.fbm(x / 280, z / 280, 4);
-  }
-
-  /** รูปร่างภูมิประเทศแบบคำนวณเต็ม (ช้า ใช้ตอนสร้างตารางเท่านั้น) */
-  shape(x: number, z: number): number {
-    let h = this.shapeBase(x, z);
-    // ถ้ำ: เนินหน้าผาชันอยู่ข้างหลังปากถ้ำ สูงกว่าเพดานอุโมงค์มาก อุโมงค์จึงอยู่ข้างในภูเขาจริง
-    CAVES.forEach((c, i) => {
-      const ox = -Math.sin(c.dir);
-      const oz = -Math.cos(c.dir);
-      const a = -((x - c.x) * ox + (z - c.z) * oz); // ระยะเข้าไปในเนิน (หลังปากถ้ำ)
-      const w = Math.abs((x - c.x) * -oz + (z - c.z) * ox);
-      if (a < -2 || a > c.depth + 40 || w > 55) return;
-      const rise = 22 * smooth(-1, 5, a) * (1 - smooth(34, 55, w)) * (1 - smooth(c.depth + 15, c.depth + 40, a));
-      h = Math.max(h, this.caveBase[i] + rise + 3 * this.detail.noise(x / 9, z / 9) * smooth(2, 8, a));
-    });
-    return h;
-  }
-
-  /** ภูมิประเทศทั้งหมดยกเว้นเนินถ้ำ */
-  private shapeBase(x: number, z: number): number {
-    const nz = this.noise;
-    let h = this.hills(x, z);
-
-    // ภูเขาล้อมสามด้าน เหนือ ตะวันออก ตะวันตก · ใต้เป็นเนินเตี้ย
-    const north = smooth(-110, -430, z);
-    const east = smooth(250, 470, x);
-    const west = smooth(-280, -480, x) * 0.75;
-    const south = smooth(380, 490, z) * 0.45;
-    const wobble = 0.75 + 0.25 * nz.noise(x / 210 + 11, z / 210 - 4);
-    const mask = Math.max(north, east, west, south) * wobble;
-    const ridge = nz.ridged(x / 200 + 3.1, z / 200 - 1.7, 5);
-    h += mask * (30 + 80 * ridge + 40 * smooth(-0.3, 0.6, nz.fbm(x / 120, z / 120, 3)));
-
-    // ที่ราบสูงขอบเป็นหน้าผาหิน กระจายบนเนิน ไว้ปีนขึ้นไปดูวิว (ไม่ขึ้นใกล้เมือง)
-    const mesa = nz.fbm(x / 95 - 5, z / 95 + 9, 3);
-    const away = (1 - smooth(0.2, 0.9, mask)) * smooth(70, 170, Math.hypot(x - TOWN.x, z - TOWN.z));
-    h += (smooth(0.33, 0.4, mesa) * 9 + smooth(0.5, 0.56, mesa) * 7) * away;
-
-    // หุบเขาที่ตั้งเมือง ราบเรียบ
-    const dt = Math.hypot(x - TOWN.x, z - TOWN.z);
-    h = lerp(TOWN.height, h, smooth(TOWN.radius * 0.7, TOWN.radius + 70, dt));
-
-    // ที่ราบจอดยาน
-    const ds = Math.hypot(x - SHIP.x, z - SHIP.z);
-    h = lerp(SHIP.height, h, smooth(SHIP.radius, SHIP.radius + 45, ds));
-
-    // ถนนเก่า ปาดให้เรียบตามแนว
-    const dr = distToPolyline(x, z, ROAD);
-    if (dr < ROAD_WIDTH + 14) h = lerp(this.roadHeight(x, z), h, smooth(ROAD_WIDTH, ROAD_WIDTH + 14, dr));
-
-    // รายละเอียดเล็ก ๆ ให้พื้นไม่เรียบเหมือนโต๊ะ
-    h += 0.9 * this.detail.fbm(x / 14, z / 14, 2) * smooth(ROAD_WIDTH, ROAD_WIDTH + 6, dr);
-
-    // แม่น้ำ กัดร่องลงต่ำกว่าระดับน้ำ
-    const dv = distToPolyline(x, z, RIVER);
-    h = lerp(WORLD.waterLevel - 1.8, h, smooth(RIVER_WIDTH * 0.6, RIVER_WIDTH + 22, dv));
-
-    // ทะเลสาบ
-    const dl = Math.hypot(x - LAKE.x, z - LAKE.z) * (1 + 0.12 * nz.noise(x / 60, z / 60));
-    h = lerp(WORLD.waterLevel - 5, h, smooth(LAKE.radius * 0.55, LAKE.radius + 35, dl));
-    return h;
-  }
-
-  /** ความสูงพื้นถนน · ใช้เนินพื้นฐานที่นุ่ม ไม่เอาภูเขาหรือรายละเอียด */
-  private roadHeight(x: number, z: number): number {
-    const dt = Math.hypot(x - TOWN.x, z - TOWN.z);
-    const ds = Math.hypot(x - SHIP.x, z - SHIP.z);
-    let h = Math.max(this.hills(x, z), WORLD.waterLevel + 2.5);
-    h = lerp(TOWN.height, h, smooth(TOWN.radius * 0.7, TOWN.radius + 70, dt));
-    return lerp(SHIP.height, h, smooth(SHIP.radius, SHIP.radius + 45, ds));
+  constructor(data: TerrainData = generateTerrain()) {
+    this.n = data.n;
+    this.heights = data.heights;
+    this.bn = data.bn;
+    this.biomes = data.biomes;
   }
 
   heightAt(x: number, z: number): number {
@@ -125,6 +39,13 @@ export class Terrain implements Ground {
     const c = hs[(j + 1) * n + i];
     const d = hs[(j + 1) * n + i + 1];
     return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
+  }
+
+  /** ชนิดพื้นที่ของช่อง 8 ม. ที่จุดนั้นอยู่ (BIOME ใน terrainGen.ts) */
+  biomeAt(x: number, z: number): BiomeId {
+    const i = Math.max(0, Math.min(this.bn - 1, Math.floor((x + WORLD.half) / BIOME_STEP)));
+    const j = Math.max(0, Math.min(this.bn - 1, Math.floor((z + WORLD.half) / BIOME_STEP)));
+    return this.biomes[j * this.bn + i] as BiomeId;
   }
 
   waterAt(x: number, z: number): number {

@@ -1,7 +1,27 @@
+import { WORLD } from '../config/game';
 import type { ExploreMap } from '../core/explore';
+import { BRIDGE, CAVES, LAKE, REGIONS, TOWN } from '../world/layout';
 import type { MapMarker } from './Hud';
-import type { MapImage } from './MapImage';
-import { onLangChange, t } from './strings';
+import { MAP_PX, type MapImage } from './MapImage';
+import { onLangChange, t, tf, type StrKey } from './strings';
+
+/** ชื่อที่บนแผนที่ใหญ่ (ขึ้นเฉพาะที่ที่เคยไปแล้ว ไม่เฉลยล่วงหน้า) */
+const PLACES: { key: StrKey; x: number; z: number }[] = [
+  { key: 'placeTown', x: TOWN.x, z: TOWN.z },
+  { key: 'placeLake', x: LAKE.x, z: LAKE.z },
+  { key: 'placeCave1', x: CAVES[0].x, z: CAVES[0].z + 20 },
+  { key: 'placeCave2', x: CAVES[1].x + 20, z: CAVES[1].z },
+  { key: 'placeBridge', x: BRIDGE.x, z: BRIDGE.z - 25 },
+  { key: 'placeMountains', x: 0, z: -1200 },
+  { key: 'placeRedwood', x: REGIONS.redwood.x, z: REGIONS.redwood.z },
+  { key: 'placeRainforest', x: 130, z: -380 },
+  { key: 'placeDeciduous', x: REGIONS.deciduous.x, z: REGIONS.deciduous.z },
+  { key: 'placeFlowers', x: REGIONS.flowers.x, z: REGIONS.flowers.z },
+  { key: 'placeOrchard', x: REGIONS.orchard.x, z: REGIONS.orchard.z },
+  { key: 'placeWetland', x: REGIONS.wetland.x + 150, z: REGIONS.wetland.z + 120 },
+  { key: 'placeDense', x: REGIONS.dense.x, z: REGIONS.dense.z },
+];
+const ZOOMS = [1, 2, 4, 8];
 
 const COLOR = { ship: '#6ff0e0', death: '#ff7070', oldBody: 'rgba(255,255,255,.55)', bag: '#c7a5ff' } as const;
 
@@ -40,6 +60,7 @@ export class BigMap {
     this.legend = this.root.querySelector('.legend-list')!;
     this.notes = this.root.querySelector('.map-note')!;
     this.closeBtn.addEventListener('click', () => this.onClose());
+    this.bindPointer();
     this.applyLang();
     onLangChange(() => this.applyLang());
   }
@@ -61,50 +82,135 @@ export class BigMap {
     return !this.root.hidden;
   }
 
+  /** ซูม 1 2 4 8 เท่า · จุดกลางมุมมอง (เมตร) */
+  private zoom = 1;
+  private cx = 0;
+  private cz = 0;
+  private last: { x: number; z: number; heading: number; markers: MapMarker[] } = { x: 0, z: 0, heading: 0, markers: [] };
+
   show(x: number, z: number, heading: number, markers: MapMarker[]): void {
     this.root.hidden = false;
-    this.draw(x, z, heading, markers);
+    this.zoom = 1;
+    this.cx = 0;
+    this.cz = 0;
+    this.last = { x, z, heading, markers };
+    this.draw();
+  }
+
+  /** ลูกกลิ้งซูมเข้าหาจุดใต้เมาส์ · ลากเลื่อน · ดับเบิลคลิกกลับทั้งแมพ */
+  private bindPointer(): void {
+    const cv = this.canvas;
+    const toWorld = (e: MouseEvent) => {
+      const r = cv.getBoundingClientRect();
+      const V = WORLD.size / this.zoom;
+      return { x: this.cx - V / 2 + ((e.clientX - r.left) / r.width) * V, z: this.cz - V / 2 + ((e.clientY - r.top) / r.height) * V };
+    };
+    cv.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const at = toWorld(e);
+      const i = ZOOMS.indexOf(this.zoom);
+      const next = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i + (e.deltaY < 0 ? 1 : -1)))];
+      if (next === this.zoom) return;
+      // จุดใต้เมาส์อยู่ที่เดิมหลังซูม
+      const k = this.zoom / next;
+      this.cx = at.x + (this.cx - at.x) * k;
+      this.cz = at.z + (this.cz - at.z) * k;
+      this.zoom = next;
+      this.clamp();
+      this.draw();
+    }, { passive: false });
+    let drag: { x: number; y: number } | null = null;
+    cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const r = cv.getBoundingClientRect();
+      const V = WORLD.size / this.zoom;
+      this.cx -= ((e.clientX - drag.x) / r.width) * V;
+      this.cz -= ((e.clientY - drag.y) / r.height) * V;
+      drag = { x: e.clientX, y: e.clientY };
+      this.clamp();
+      this.draw();
+    });
+    const end = () => { drag = null; };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    cv.addEventListener('dblclick', () => { this.zoom = 1; this.cx = this.cz = 0; this.draw(); });
+  }
+
+  private clamp(): void {
+    const lim = WORLD.half - WORLD.size / this.zoom / 2;
+    this.cx = Math.max(-lim, Math.min(lim, this.cx));
+    this.cz = Math.max(-lim, Math.min(lim, this.cz));
   }
 
   hide(): void {
     this.root.hidden = true;
   }
 
-  private draw(x: number, z: number, heading: number, markers: MapMarker[]): void {
+  private draw(): void {
+    const { x, z, heading, markers } = this.last;
     if (this.explore.dirty) this.map.refresh(this.explore);
-    this.sub.textContent = `${t('mapSub')} ${Math.round(this.explore.fraction() * 100)}% · 1 × 1 ${t('km')}`;
+    const km = WORLD.size / 1000;
+    this.sub.textContent = `${t('mapSub')} ${Math.round(this.explore.fraction() * 100)}% · ${km} × ${km} ${t('km')} · ${t('mapZoomHint')}`;
     const c = this.canvas.getContext('2d')!;
     const S = this.canvas.width;
-    const k = S / 1000;
+    const V = WORLD.size / this.zoom;
+    const left = this.cx - V / 2;
+    const top = this.cz - V / 2;
+    const k = S / V;
     c.fillStyle = '#050b0c';
     c.fillRect(0, 0, S, S);
-    c.imageSmoothingEnabled = true;
-    c.drawImage(this.map.revealed, 0, 0, S, S);
+    c.imageSmoothingEnabled = this.zoom < 4;
+    c.drawImage(this.map.revealed, (left + WORLD.half) / MAP_PX, (top + WORLD.half) / MAP_PX, V / MAP_PX, V / MAP_PX, 0, 0, S, S);
+    // ตาราง 500 ม. (ซูมมาก 100 ม.)
+    const gridStep = this.zoom >= 4 ? 100 : 500;
     c.strokeStyle = 'rgba(111,240,224,.08)';
     c.lineWidth = 1;
-    for (let g = 0; g <= 1000; g += 100) {
-      c.beginPath(); c.moveTo(g * k, 0); c.lineTo(g * k, S); c.stroke();
-      c.beginPath(); c.moveTo(0, g * k); c.lineTo(S, g * k); c.stroke();
+    for (let g = -WORLD.half; g <= WORLD.half; g += gridStep) {
+      const gx = (g - left) * k;
+      const gz = (g - top) * k;
+      c.beginPath(); c.moveTo(gx, 0); c.lineTo(gx, S); c.stroke();
+      c.beginPath(); c.moveTo(0, gz); c.lineTo(S, gz); c.stroke();
     }
-    const px = (v: number) => (v + 500) * k;
-    c.font = '600 22px "Chakra Petch", "Sarabun", sans-serif';
+    const px = (v: number) => (v - left) * k;
+    const pz = (v: number) => (v - top) * k;
+    // ชื่อที่ (เฉพาะที่เคยไป)
     c.textAlign = 'center';
+    c.font = '500 20px "Chakra Petch", "Sarabun", sans-serif';
+    c.lineWidth = 4;
+    c.strokeStyle = 'rgba(5,11,12,.8)';
+    c.fillStyle = 'rgba(233,244,242,.82)';
+    for (const p of PLACES) {
+      if (!this.explore.isOpen(p.x, p.z)) continue;
+      c.strokeText(t(p.key), px(p.x), pz(p.z));
+      c.fillText(t(p.key), px(p.x), pz(p.z));
+    }
+    c.font = '600 20px "Chakra Petch", "Sarabun", sans-serif';
     for (const m of markers) {
       const X = px(m.x);
-      const Z = px(m.z);
+      const Z = pz(m.z);
       c.fillStyle = c.strokeStyle = COLOR[m.kind];
+      let label = '';
       if (m.kind === 'ship') {
         c.beginPath(); c.arc(X, Z, 11, 0, Math.PI * 2); c.fill();
-        c.fillText(t('ship'), X, Z + 36);
+        label = t('ship');
       } else if (m.kind === 'bag') {
         c.fillRect(X - 9, Z - 9, 18, 18);
+        label = t('bagMark');
       } else {
         c.lineWidth = 4;
         c.beginPath(); c.moveTo(X - 10, Z - 10); c.lineTo(X + 10, Z + 10); c.moveTo(X + 10, Z - 10); c.lineTo(X - 10, Z + 10); c.stroke();
+        if (m.n) label = tf('mapBodyN', { n: m.n });
+      }
+      if (label) {
+        c.lineWidth = 4;
+        c.strokeStyle = 'rgba(5,11,12,.8)';
+        c.strokeText(label, X, Z + 34);
+        c.fillText(label, X, Z + 34);
       }
     }
     c.save();
-    c.translate(px(x), px(z));
+    c.translate(px(x), pz(z));
     c.rotate(-heading);
     c.fillStyle = '#fff';
     c.beginPath(); c.moveTo(0, -18); c.lineTo(-12, 13); c.lineTo(0, 7); c.lineTo(12, 13); c.closePath(); c.fill();

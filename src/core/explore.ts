@@ -1,13 +1,15 @@
 // แผนที่ที่เคยเดินผ่าน · แบ่งแมพเป็นช่องละ 8 เมตร เดินผ่านแล้วเปิดรอบตัว 40 เมตร
+import { WORLD } from '../config/game';
 
-export const EXPLORE = { cell: 8, cells: 125, reveal: 40 } as const;
+/** จำนวนช่องคิดจากขนาดแมพ (แมพ 3 กม. = 375 ช่องต่อแถว) · เดิมเขียนตายตัว 125 ขยายแมพแล้วแผนที่มืด */
+export const EXPLORE = { cell: 8, cells: WORLD.size / 8, reveal: 40 } as const;
 
 export class ExploreMap {
   readonly bits = new Uint8Array(EXPLORE.cells * EXPLORE.cells);
   /** ช่องที่เปิดใหม่ตั้งแต่ครั้งล่าสุดที่วาด (ให้หน้าจอวาดเฉพาะส่วนใหม่) */
   dirty = true;
 
-  constructor(private half = 500) {}
+  constructor(private half: number = WORLD.half) {}
 
   /** เปิดแผนที่รอบจุดนั้น · คืนจำนวนช่องที่เปิดใหม่ */
   reveal(x: number, z: number, radius: number = EXPLORE.reveal): number {

@@ -6,7 +6,8 @@ import type { NestedBag } from '../core/inventory';
 
 export const SAVE_KEY = 'remnant.save.v1';
 export const SETTINGS_KEY = 'remnant.settings.v1';
-export const SAVE_VERSION = 1;
+/** รุ่น 2 = โลก 3 × 3 กม. (รอบสอง) · รุ่น 1 = โลก 1 กม. อ่านได้ผ่าน readOldSave ไว้ย้ายคอลเลกชันกับของที่พก */
+export const SAVE_VERSION = 2;
 
 export interface SaveData {
   version: number;
@@ -72,8 +73,8 @@ const num = (v: unknown): v is number => typeof v === 'number' && isFinite(v);
 const arr = Array.isArray;
 
 /** ตรวจทุกช่องของบันทึก ช่องไหนผิดรูป = ถือว่าบันทึกเสีย (เริ่มใหม่ ไม่โหลดครึ่ง ๆ กลาง ๆ) */
-function valid(d: SaveData): boolean {
-  if (!d || d.version !== SAVE_VERSION || !num(d.gameTime) || !num(d.bodyNumber) || !num(d.savedAt)) return false;
+function valid(d: SaveData, version = SAVE_VERSION): boolean {
+  if (!d || d.version !== version || !num(d.gameTime) || !num(d.bodyNumber) || !num(d.savedAt)) return false;
   if (!d.player || !num(d.player.x) || !num(d.player.z) || !num(d.player.heading)) return false;
   if (!d.loadout || !arr(d.loadout.belt) || !arr(d.loadout.arms)) return false;
   if (!d.shipChoice || typeof d.shipChoice !== 'object') return false;
@@ -91,6 +92,21 @@ export function readSave(): SaveData | null {
     if (!raw) return null;
     const d = JSON.parse(raw) as SaveData;
     return valid(d) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * บันทึกรุ่นเก่า (โลก 1 กม.) · ตำแหน่ง ซาก กระเป๋า แผนที่ ใช้กับโลกใหม่ไม่ได้ แต่คอลเลกชันกับของที่พกยังใช้ได้
+ * (เดิมขึ้นรุ่นแล้วคอลเลกชันหายทั้งหมด ขัด DESIGN 9.3 ผลสแกนตายแล้วไม่หาย)
+ */
+export function readOldSave(): SaveData | null {
+  try {
+    const raw = storage()?.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as SaveData;
+    return valid(d, 1) ? d : null;
   } catch {
     return null;
   }

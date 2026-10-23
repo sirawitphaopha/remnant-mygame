@@ -3,6 +3,7 @@ import { DEFAULT_QUALITY, QUALITY, type QualityLevel, type QualityPreset } from 
 import { DAY_SECONDS, START_TIME, skyAt, type SkyState } from '../core/time';
 import { SPAWN_POINT } from '../world/layout';
 import { Terrain } from '../world/Terrain';
+import type { TerrainData } from '../world/terrainGen';
 import { CircleColliders } from '../world/colliders';
 import { Player } from '../player/Player';
 import { CameraRig, type CameraWorld } from '../render/CameraRig';
@@ -47,7 +48,7 @@ import { WorldGround } from './WorldGround';
 import { disposeObject } from '../render/dispose';
 import { Animals } from './Animals';
 import { NatureAudio, type Surface } from '../audio/NatureAudio';
-import { clearSave, readSave, readSettings, storedSavedAt, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
+import { clearSave, readOldSave, readSave, readSettings, storedSavedAt, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
 import { SettingsScreen, TitleScreen } from '../ui/Menus';
 import { forestDensity } from '../world/scatter';
 import { LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from '../world/layout';
@@ -59,7 +60,8 @@ const ARM_KEY_LABEL: (() => string)[] = [() => t('keyLeft'), () => t('keyRight')
 export class App {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1400);
+  /** มองไกล 5 กม. เห็นภูเขาทั้งเทือกจากทุกที่ในแมพ 3 กม. (หมอกบางลงตาม Sky) */
+  readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000);
   readonly input: Input;
   readonly terrain: Terrain;
   readonly terrainMesh: TerrainMesh;
@@ -71,7 +73,7 @@ export class App {
   readonly sun: THREE.DirectionalLight;
   readonly hemi: THREE.HemisphereLight;
   readonly sky = new Sky();
-  readonly fog = new THREE.FogExp2(0xb7cdd6, 0.0034);
+  readonly fog = new THREE.FogExp2(0xb7cdd6, 0.0011);
   /** เวลาในเกม วินาทีนับจาก 00:00 ของวันแรก */
   gameTime = START_TIME * DAY_SECONDS;
   /** ตัวคูณความเร็วเวลา (ทดสอบเท่านั้น) */
@@ -82,6 +84,8 @@ export class App {
   readonly hero = new HeroModel();
   readonly colliders = new CircleColliders();
   private camWorld: CameraWorld | null = null;
+  /** เพิ่งย้ายบันทึกจากโลก 1 กม. มาโลกใหม่ (หน้าแรกบอกคนเล่น) */
+  private worldMoved = false;
   /** ของที่พกอยู่ แถบล่าง 9 ช่อง และแขน 4 ข้าง */
   loadout: Loadout = starterPack();
   readonly explore = new ExploreMap();
@@ -154,7 +158,8 @@ export class App {
   private fpsAcc = 0;
   private fpsFrames = 0;
 
-  constructor(private host: HTMLElement, readonly uiRoot: HTMLElement) {
+  /** terrainData สร้างมาแล้วจาก Web Worker (main.ts) · ไม่ส่ง = สร้างตรงนี้ (ช้า หน้าเว็บค้างราว 5 วินาที) */
+  constructor(private host: HTMLElement, readonly uiRoot: HTMLElement, terrainData?: TerrainData) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const app = this;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -166,7 +171,7 @@ export class App {
     this.input = new Input(this.renderer.domElement);
 
     const t0 = performance.now();
-    this.terrain = new Terrain();
+    this.terrain = new Terrain(terrainData);
     this.scene.fog = this.fog;
     this.scene.add(this.sky.mesh);
 
@@ -426,17 +431,40 @@ export class App {
       this.title.show({ body: this.bodyNumber, day: Math.floor(this.gameTime / DAY_SECONDS) + 1, found: found() });
       return;
     }
-    const d = readSave();
+    let d = readSave();
+    const old = d ? null : readOldSave();
+    if (old) {
+      // บันทึกจากโลก 1 กม. ย้ายมาโลกใหม่: เก็บคอลเลกชัน ของที่พก ร่างที่ เวลา · ตำแหน่ง ซาก กระเป๋า แผนที่ เริ่มใหม่ที่ยาน
+      d = {
+        ...old,
+        version: SAVE_VERSION,
+        savedAt: Date.now(),
+        player: { x: SPAWN_POINT.x, z: SPAWN_POINT.z, heading: SPAWN_POINT.heading },
+        explore: '',
+        takenProps: [],
+        corpses: [],
+        droppedBags: [],
+        body: { oxygen: 1, cracks: 0, warmth: 1 },
+      };
+      writeSave(d);
+      this.lastSavedAt = d.savedAt;
+      this.worldMoved = true;
+    }
     // ให้หน้าเริ่มเกมเป็นช่วงแดดเย็นแบบในมอคอัป
     this.gameTime = d ? d.gameTime : (17.6 / 24) * DAY_SECONDS;
     this.skyState = skyAt(this.gameTime);
     if (d) this.scanLog.load(d.scanLog);
     this.title.show(d ? { body: d.bodyNumber, day: Math.floor(d.gameTime / DAY_SECONDS) + 1, found: found() } : null);
+    // บอกจนกว่าจะกดเล่น (หน้าแรกอาจถูกวาดซ้ำหลังย้ายบันทึก)
+    if (this.worldMoved) this.title.notice('worldMoved');
   }
 
   private startPlaying(): void {
+    this.worldMoved = false;
     this.started = true;
     this.live = true;
+    // แผ่นพื้นรอบตัวสร้างให้ครบก่อนเห็นภาพแรก (ไม่เห็นพื้นหยาบค่อย ๆ ละเอียด)
+    this.terrainMesh.update(this.player.x, this.player.z, true);
     this.title.hide();
     this.closeScreens();
     this.hud.root.hidden = false;
@@ -613,6 +641,7 @@ export class App {
     this.worldGround.contextY = Infinity;
     this.player.place(x, z, heading);
     this.rig.snap(this.player);
+    this.terrainMesh.update(x, z, true);
     this.advance(0.1);
   }
 
@@ -647,11 +676,11 @@ export class App {
       const c = (dx * dir.x + dy * dir.y + dz * dir.z) / d;
       if (c > bestCos) { bestCos = c; best = { key, kind, x, y, z }; }
     };
-    this.vegetation.trees.forEach((set) => set.items.forEach((it, i) => {
-      if (Math.abs(it.x - p.x) < 30 && Math.abs(it.z - p.z) < 30) test(`tree-${set.kind}-${i}`, set.kind, it.x, it.y + 2.5 * it.scale, it.z);
+    this.vegetation.trees.forEach((set) => set.items.forEach((it) => {
+      if (Math.abs(it.x - p.x) < 30 && Math.abs(it.z - p.z) < 30) test(`tree-${set.kind}@${Math.round(it.x)},${Math.round(it.z)}`, set.kind, it.x, it.y + 2.5 * it.scale, it.z);
     }));
-    this.vegetation.rocks.forEach((r, i) => {
-      if (Math.abs(r.x - p.x) < 30 && Math.abs(r.z - p.z) < 30) test(`rock-${i}`, 'rock', r.x, r.y + 0.4 * r.scale, r.z);
+    this.vegetation.rocks.forEach((r) => {
+      if (Math.abs(r.x - p.x) < 30 && Math.abs(r.z - p.z) < 30) test(`rock@${Math.round(r.x)},${Math.round(r.z)}`, 'rock', r.x, r.y + 0.4 * r.scale, r.z);
     });
     const H: Record<string, number> = { car: 0.9, bus: 1.6, lamp: 5, mailbox: 0.8, sign: 2.6 };
     for (const pp of this.props.all) {
@@ -756,6 +785,7 @@ export class App {
     this.hero.root.visible = true;
     this.worldGround.contextY = Infinity;
     this.player.place(SPAWN_POINT.x, SPAWN_POINT.z, SPAWN_POINT.heading);
+    this.terrainMesh.update(SPAWN_POINT.x, SPAWN_POINT.z, true);
     this.player.stamina.value = 100;
     this.player.stamina.exhausted = false;
     this.rig.snap(this.player);
@@ -884,7 +914,7 @@ export class App {
   /** เครื่องหมายบนแผนที่ (ช่วง 6 และ 7 เพิ่มซาก กระเป๋า) */
   markers(): MapMarker[] {
     const last = this.corpses[this.corpses.length - 1];
-    const bodies = this.corpses.map((c) => ({ kind: (c === last && c.slots.some(Boolean) ? 'death' : 'oldBody') as 'death' | 'oldBody', x: c.x, z: c.z }));
+    const bodies = this.corpses.map((c) => ({ kind: (c === last && c.slots.some(Boolean) ? 'death' : 'oldBody') as 'death' | 'oldBody', x: c.x, z: c.z, n: c.n }));
     return [{ kind: 'ship', x: SHIP.x, z: SHIP.z }, ...bodies, ...this.droppedBags.filter((b) => b.beacon).map((b) => ({ kind: 'bag' as const, x: b.x, z: b.z }))];
   }
 

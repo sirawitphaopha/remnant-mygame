@@ -127,7 +127,7 @@ export class Sky {
 
   constructor() {
     this.mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(1000, 32, 16),
+      new THREE.SphereGeometry(4500, 32, 16),
       new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: vert, fragmentShader: frag, side: THREE.BackSide, depthWrite: false, fog: false }),
     );
     this.mesh.frustumCulled = false;
@@ -185,6 +185,7 @@ export class Sky {
     this.brightness = Math.min(1, day + moonGlow * 0.25);
 
     fog.color.copy(hor);
-    fog.density = (0.0034 + s.fog * 0.014) * this.fogScale;
+    // ฟ้าใสมองเห็นภูเขาไกล 1.5 กม. · หมอกเช้าหนาจนเห็นแค่ใกล้ ๆ
+    fog.density = (0.0011 + s.fog * 0.012) * this.fogScale;
   }
 }

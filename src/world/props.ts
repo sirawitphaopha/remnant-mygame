@@ -1,5 +1,5 @@
 import { WORLD } from '../config/game';
-import { ROAD, ROAD_WIDTH, SHIP, TOWN, distToPolyline, type P2 } from './layout';
+import { BRIDGE, RIVER, RIVER_WIDTH, ROAD, ROADS, ROAD_WIDTH, SHIP, TOWN, distToPolyline, type P2 } from './layout';
 import { rng } from './noise';
 
 // ของมนุษย์ที่วางในโลก · ของใหญ่ (รถ เสาไฟ ป้าย) สแกนได้อย่างเดียว · ของชิ้นเล็กเก็บได้
@@ -16,30 +16,38 @@ export interface Prop {
   special?: boolean;
   /** ข้อความบนป้าย (ภาษาอังกฤษ ป้ายเป็นของในโลกมนุษย์) */
   text?: string;
+  /** แบบของโมเดล (สีรถ) */
+  variant?: number;
 }
+
+/**
+ * รหัสของในโลกผูกกับชนิดและตำแหน่งปัดเป็นเมตร ไม่ผูกกับลำดับการสุ่ม
+ * (เดิม item-12 car-3 · เปลี่ยนผังโลกแล้วรหัสเดิมชี้ไปของคนละชิ้น ของที่เก็บแล้วงอกคืน)
+ */
+export const propKey = (kind: string, x: number, z: number): string => `${kind}@${Math.round(x)},${Math.round(z)}`;
 
 const SMALL_KINDS = ['teddy', 'phone', 'bottle', 'watch', 'glasses', 'frame', 'toycar', 'book', 'keys', 'coin'];
 
 /** จุดบนถนนที่ระยะ t (0 ถึง 1) พร้อมทิศถนน */
-function alongRoad(t: number): P2 & { dir: number } {
+function alongRoad(t: number, road: P2[] = ROAD): P2 & { dir: number } {
   const segs: number[] = [];
   let total = 0;
-  for (let i = 0; i < ROAD.length - 1; i++) {
-    const l = Math.hypot(ROAD[i + 1].x - ROAD[i].x, ROAD[i + 1].z - ROAD[i].z);
+  for (let i = 0; i < road.length - 1; i++) {
+    const l = Math.hypot(road[i + 1].x - road[i].x, road[i + 1].z - road[i].z);
     segs.push(l);
     total += l;
   }
   let d = t * total;
   for (let i = 0; i < segs.length; i++) {
     if (d <= segs[i] || i === segs.length - 1) {
-      const a = ROAD[i];
-      const b = ROAD[i + 1];
+      const a = road[i];
+      const b = road[i + 1];
       const f = Math.min(1, d / segs[i]);
       return { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f, dir: Math.atan2(-(b.x - a.x), -(b.z - a.z)) };
     }
     d -= segs[i];
   }
-  return { x: ROAD[0].x, z: ROAD[0].z, dir: 0 };
+  return { x: road[0].x, z: road[0].z, dir: 0 };
 }
 
 export const SIGN_TEXTS = [
@@ -56,54 +64,72 @@ export function placeProps(): Prop[] {
   const r = rng(WORLD.seed + 404);
   const out: Prop[] = [];
   const side = (p: P2 & { dir: number }, off: number): P2 => ({ x: p.x + Math.cos(p.dir) * off, z: p.z - Math.sin(p.dir) * off });
+  const put = (kind: string, at: P2, rot: number, extra: Partial<Prop> = {}) => {
+    const key = propKey(kind, at.x, at.z);
+    if (out.some((o) => o.key === key)) return null;
+    const p: Prop = { key, kind, x: at.x, z: at.z, rot, ...extra };
+    out.push(p);
+    return p;
+  };
+  const nearBridge = (q: P2) => Math.hypot(q.x - BRIDGE.x, q.z - BRIDGE.z) < 40 || distToPolyline(q.x, q.z, RIVER) < RIVER_WIDTH + 16;
 
-  // รถร้างตามถนน · คันที่ 3 มีตุ๊กตาที่เบาะหลัง (ชิ้นพิเศษ)
-  const carTs = [0.08, 0.17, 0.27, 0.38, 0.47, 0.6, 0.74, 0.88];
+  // รถร้างตามถนนหลวง 3 กม. กับถนนเข้าเมือง · คันที่ 3 มีตุ๊กตาที่เบาะหลัง (ชิ้นพิเศษ) · ไม่จอดบนสะพานหรือในแม่น้ำ
+  const cars: Prop[] = [];
+  const carTs = [0.05, 0.11, 0.16, 0.23, 0.29, 0.34, 0.38, 0.43, 0.47, 0.52, 0.58, 0.63, 0.69, 0.75, 0.82, 0.9, 0.96];
   carTs.forEach((t, i) => {
-    const p = alongRoad(t);
+    let p = alongRoad(t);
+    if (nearBridge(p)) p = alongRoad(t + 0.025);
     const s = side(p, (i % 2 ? 1 : -1) * (ROAD_WIDTH * 0.4 + r() * 1.5));
-    out.push({ key: `car-${i}`, kind: 'car', x: s.x, z: s.z, rot: p.dir + (r() - 0.5) * 0.9, special: i === 2 });
+    const c = put('car', s, p.dir + (r() - 0.5) * 0.9, { variant: i, special: i === 2 });
+    if (c) cars.push(c);
+  });
+  [0.35, 0.7].forEach((t, i) => {
+    const p = alongRoad(t, ROADS[1]);
+    const c = put('car', side(p, ROAD_WIDTH * 0.5), p.dir + (r() - 0.5) * 0.6, { variant: 20 + i });
+    if (c) cars.push(c);
   });
   // รถบัสในเมือง
-  out.push({ key: 'bus-0', kind: 'bus', x: TOWN.x - 22, z: TOWN.z + 18, rot: 0.6 });
-  // เสาไฟตามถนนช่วงใกล้เมือง
-  for (let i = 0; i < 12; i++) {
-    const p = alongRoad(0.3 + i * 0.035);
-    const s = side(p, ROAD_WIDTH + 1.4);
-    out.push({ key: `lamp-${i}`, kind: 'lamp', x: s.x, z: s.z, rot: p.dir + (r() - 0.5) * 0.25 });
+  put('bus', { x: TOWN.x - 22, z: TOWN.z + 18 }, 0.6);
+  // เสาไฟตามถนนเข้าเมือง กับถนนหลวงช่วงแยกเข้าเมือง
+  for (let i = 0; i < 9; i++) {
+    const p = alongRoad(0.08 + i * 0.11, ROADS[1]);
+    put('lamp', side(p, (i % 2 ? 1 : -1) * (ROAD_WIDTH + 1.4)), p.dir + (r() - 0.5) * 0.25);
+  }
+  for (let i = 0; i < 8; i++) {
+    const p = alongRoad(0.44 + i * 0.012);
+    if (!nearBridge(p)) put('lamp', side(p, ROAD_WIDTH + 1.4), p.dir + (r() - 0.5) * 0.25);
   }
   // ตู้ไปรษณีย์ในเมือง · ใบแรกยังมีจดหมาย (ชิ้นพิเศษ)
-  [[12, -6], [55, 20], [-8, 30]].forEach(([dx, dz], i) => out.push({ key: `mailbox-${i}`, kind: 'mailbox', x: TOWN.x + dx, z: TOWN.z + dz, rot: r() * 6.28, special: i === 0 }));
+  [[12, -6], [55, 20], [-8, 30]].forEach(([dx, dz], i) => put('mailbox', { x: TOWN.x + dx, z: TOWN.z + dz }, r() * 6.28, { special: i === 0 }));
   // ป้ายถนนภาษาอังกฤษ บางป้ายชี้ผิดทาง
-  const signTs = [0.04, 0.2, 0.33, 0.52, 0.64, 0.8, 0.95];
+  const signTs = [0.04, 0.2, 0.33, 0.47, 0.64, 0.8, 0.95];
   signTs.forEach((t, i) => {
-    const p = alongRoad(t);
-    const s = side(p, ROAD_WIDTH + 2.2);
-    out.push({ key: `sign-${i}`, kind: 'sign', x: s.x, z: s.z, rot: p.dir + (i === 1 ? 2.2 : 0), text: SIGN_TEXTS[i % SIGN_TEXTS.length] });
+    let p = alongRoad(t);
+    if (nearBridge(p) && i !== 3) p = alongRoad(t + 0.02);
+    put('sign', side(p, ROAD_WIDTH + 2.2), p.dir + (i === 1 ? 2.2 : 0), { text: SIGN_TEXTS[i % SIGN_TEXTS.length] });
   });
 
   // ของชิ้นเล็ก: ข้างรถ ในเมือง ตามทาง
-  let n = 0;
   const addSmall = (x: number, z: number, kind?: string, special = false) => {
     if (Math.hypot(x - SHIP.x, z - SHIP.z) < 20) return;
     const k = kind ?? SMALL_KINDS[Math.floor(r() * SMALL_KINDS.length)];
-    out.push({ key: `item-${n++}`, kind: k, x, z, rot: r() * 6.28, special });
+    put(k, { x, z }, r() * 6.28, { special });
   };
   // ตุ๊กตาพิเศษในรถคันที่ 3 · โทรศัพท์พิเศษกับกรอบรูปพิเศษในเมือง
-  const car3 = out.find((p) => p.key === 'car-2')!;
+  const car3 = cars.find((c) => c.special)!;
   addSmall(car3.x + 1.6, car3.z + 0.8, 'teddy', true);
   addSmall(TOWN.x + 6, TOWN.z - 14, 'phone', true);
   addSmall(TOWN.x - 18, TOWN.z - 4, 'frame', true);
-  for (const c of out.filter((p) => p.kind === 'car')) for (let j = 0; j < 2; j++) addSmall(c.x + (r() - 0.5) * 6, c.z + (r() - 0.5) * 6);
-  for (let j = 0; j < 32; j++) {
+  for (const c of cars) for (let j = 0; j < 2; j++) addSmall(c.x + (r() - 0.5) * 6, c.z + (r() - 0.5) * 6);
+  for (let j = 0; j < 40; j++) {
     const a = r() * Math.PI * 2;
     const d = Math.sqrt(r()) * TOWN.radius * 0.7;
     addSmall(TOWN.x + Math.cos(a) * d, TOWN.z + Math.sin(a) * d);
   }
-  for (let j = 0; j < 12; j++) {
+  for (let j = 0; j < 24; j++) {
     const p = alongRoad(r());
     const s = side(p, (r() - 0.5) * 16);
-    if (distToPolyline(s.x, s.z, ROAD) > 1) addSmall(s.x, s.z);
+    if (distToPolyline(s.x, s.z, ROAD) > 1 && !nearBridge(s)) addSmall(s.x, s.z);
   }
   return out;
 }

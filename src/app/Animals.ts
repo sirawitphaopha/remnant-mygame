@@ -78,7 +78,7 @@ export class Animals {
       const d = 45 + Math.random() * 60;
       const x = px + Math.cos(a) * d;
       const z = pz + Math.sin(a) * d;
-      if (Math.abs(x) > 480 || Math.abs(z) > 480 || !this.fits(s, x, z)) continue;
+      if (Math.abs(x) > WORLD.half - 30 || Math.abs(z) > WORLD.half - 30 || !this.fits(s, x, z)) continue;
       const model = animalModel(s.id);
       this.group.add(model.root);
       const alt = s.move === 'fly' ? (s.id === 'eagle' ? 45 + Math.random() * 20 : 8 + Math.random() * 10) : s.move === 'swim' ? -0.6 : s.move === 'flutter' ? 0.6 + Math.random() : 0;
@@ -182,8 +182,8 @@ export class Animals {
           nz = a.z;
           a.retarget = 0;
         }
-        a.x = Math.max(-495, Math.min(495, nx));
-        a.z = Math.max(-495, Math.min(495, nz));
+        a.x = Math.max(-WORLD.half + 5, Math.min(WORLD.half - 5, nx));
+        a.z = Math.max(-WORLD.half + 5, Math.min(WORLD.half - 5, nz));
       }
       const ground = this.terrain.heightAt(a.x, a.z);
       if (s.move === 'fly') a.y = Math.max(ground + 3, (s.id === 'eagle' ? 0 : ground) + a.alt + Math.sin(time * 0.6 + a.id) * 1.5);

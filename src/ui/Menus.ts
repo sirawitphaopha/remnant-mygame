@@ -44,6 +44,12 @@ export class TitleScreen {
 
   get open(): boolean { return !this.root.hidden; }
 
+  /** ข้อความใต้เมนู (เช่น บันทึกเก่าย้ายมาโลกใหม่แล้ว) */
+  notice(key: StrKey): void {
+    this.note = key;
+    this.render();
+  }
+
   show(info: ContinueInfo | null): void {
     this.info = info;
     this.note = null;
