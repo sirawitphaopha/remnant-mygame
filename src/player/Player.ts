@@ -1,4 +1,5 @@
 import { MOVE, WORLD } from '../config/game';
+import { HERO } from '../config/scale';
 import { newStamina, spendJump, stepStamina, type Activity, type StaminaState } from '../core/stamina';
 import type { CircleColliders } from '../world/colliders';
 import type { Ground } from '../world/Ground';
@@ -24,7 +25,7 @@ const WALKABLE_NY = 0.72;
 const SLIDE = { drag: 0.35, maxSpeed: 12 } as const;
 const TOP_NY = 0.8;
 /** น้ำลึกเกินนี้ต้องว่าย */
-const SWIM_DEPTH = 1.3;
+const SWIM_DEPTH = HERO.swimDepth;
 
 export interface SlopeGround extends Ground {
   normalAt(x: number, z: number): [number, number, number];
@@ -121,8 +122,8 @@ export class Player {
     stepStamina(st, dt, this.activity, this.grade, intent.loadRatio);
     this.speed = Math.hypot(this.vx, this.vz);
     this.stepPhase += dt * (this.state === 'climb' ? 2.2 : this.speed * 1.9);
-    // หัว (โหลแก้ว) ตอนว่ายอยู่ราว 0.9 + 0.1 ม. เหนือจุดยืน ตอนยืนอยู่ 1.75 ม.
-    const headY = this.y + (this.state === 'swim' ? 1.0 : 1.75);
+    // หัว (กลางโหลแก้ว) ตอนว่ายกับตอนยืน (src/config/scale.ts)
+    const headY = this.y + (this.state === 'swim' ? HERO.swimHeadHeight : HERO.headHeight);
     this.underwater = headY < WORLD.waterLevel && this.depthAt(this.x, this.z) > 0;
   }
 
@@ -145,7 +146,7 @@ export class Player {
       want = len > 0.01 ? (this.sinking ? 0.4 : canRun ? 1.7 : MOVE.swimSpeed) : 0;
     } else {
       want = len > 0.01 ? (canRun ? MOVE.runSpeed : MOVE.walkSpeed) : 0;
-      if (depth > 0.35) want *= 0.6; // ลุยน้ำตื้นช้าลง
+      if (depth > HERO.wadeDepth) want *= 0.6; // ลุยน้ำเกินเข่าช้าลง
       // ยิ่งหนักยิ่งเดินช้า (DESIGN 7.5) แบกเกินครึ่งเริ่มช้า แบกเต็มช้าลง 30%
       want *= 1 - 0.3 * Math.max(0, Math.min(1, (intent.loadRatio - 0.5) / 0.5));
     }
@@ -224,7 +225,7 @@ export class Player {
 
     if (this.state === 'swim') {
       // ว่ายแบบลำตัวนอนราบ โหลแก้วโผล่พ้นน้ำครึ่งหนึ่ง · หมดแรงแล้วค่อย ๆ จม
-      const surfaceY = WORLD.waterLevel - 0.95;
+      const surfaceY = WORLD.waterLevel - HERO.swimFloat;
       if (this.sinking) this.y = Math.max(floor, Math.min(this.y, surfaceY) - 0.45 * dt);
       else this.y += (surfaceY - this.y) * Math.min(1, 4 * dt);
       this.vy = 0;
@@ -284,7 +285,7 @@ export class Player {
         this.state = this.depthAt(this.x, this.z) > SWIM_DEPTH ? 'swim' : 'ground';
         if (this.state === 'swim') this.lastFall = 0; // ตกลงน้ำไม่เจ็บ
       }
-      if (this.depthAt(this.x, this.z) > SWIM_DEPTH && this.y < WORLD.waterLevel - 0.95) {
+      if (this.depthAt(this.x, this.z) > SWIM_DEPTH && this.y < WORLD.waterLevel - HERO.swimFloat) {
         this.state = 'swim';
         this.lastFall = 0;
       }

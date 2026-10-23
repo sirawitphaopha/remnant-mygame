@@ -19,12 +19,19 @@ export interface CameraWorld {
   blockers?: (from: THREE.Vector3, to: THREE.Vector3) => number;
 }
 
-/** ค่ากล้องทั้งหมด · ยกแบบ Red Dead Redemption 2 */
+/**
+ * ค่ากล้องทั้งหมด · ยกแบบ Red Dead Redemption 2
+ * ตั้งตามตัวสูง 1.5 ม. (รอบสอง) จุดหมุนราวไหล่ ระยะกับไหล่ย่อตามสัดส่วนตัว (เดิมตั้งไว้กับตัวสูง 2 ม.)
+ */
 export const CAM = {
-  pivotHeight: 1.55,
-  shoulder: 0.58,
-  aimShoulder: 0.5,
-  dist: { walk: 3.3, run: 4.1, aim: 1.55, swim: 3.8, climb: 4.4 },
+  pivotHeight: 1.2,
+  shoulder: 0.45,
+  aimShoulder: 0.4,
+  dist: { walk: 2.7, run: 3.3, aim: 1.2, swim: 3.0, climb: 3.5 },
+  /** ตอนว่าย จุดหมุนยกขึ้นเท่านี้ (ตัวจมอยู่ในน้ำ) */
+  swimLift: 0.25,
+  /** กล้องอยู่เหนือพื้นอย่างน้อยเท่านี้ */
+  groundClear: 0.3,
   fov: { walk: 58, run: 65, aim: 46 },
   /** ปล่อยเมาส์นานเท่านี้แล้วเดินอยู่ กล้องค่อย ๆ หมุนกลับไปข้างหลัง */
   recenterAfter: 1.6,
@@ -50,6 +57,11 @@ export class CameraRig {
   private hit = 1;
   private tmpA = new THREE.Vector3();
   private tmpB = new THREE.Vector3();
+  private tmpC = new THREE.Vector3();
+  private tmpView = new THREE.Vector3();
+  private fwd = { x: 0, z: -1 };
+  /** สัดส่วนไหล่ที่ยื่นได้ (ชิดผนังด้านไหล่ = หดเข้าหาตัว) */
+  private sideHit = 1;
 
   constructor(public camera: THREE.PerspectiveCamera) {}
 
@@ -64,11 +76,13 @@ export class CameraRig {
 
   /** ทิศหน้าของกล้องบนพื้นราบ ใช้แปลงปุ่ม WASD เป็นทิศในโลก */
   forward(): { x: number; z: number } {
-    return { x: -Math.sin(this.yaw), z: -Math.cos(this.yaw) };
+    this.fwd.x = -Math.sin(this.yaw);
+    this.fwd.z = -Math.cos(this.yaw);
+    return this.fwd;
   }
 
   /** ทิศที่กล้องมอง (ใช้เล็งสแกน) */
-  viewDir(out = new THREE.Vector3()): THREE.Vector3 {
+  viewDir(out = this.tmpView): THREE.Vector3 {
     return out.set(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
   }
 
@@ -98,7 +112,7 @@ export class CameraRig {
     }
 
     // จุดหมุนตามตัวละครแบบหน่วง (แนวตั้งหน่วงกว่า กล้องไม่เด้งตามก้าว)
-    const py = t.y + (t.state === 'swim' ? CAM.pivotHeight + 0.35 : CAM.pivotHeight);
+    const py = t.y + (t.state === 'swim' ? CAM.pivotHeight + CAM.swimLift : CAM.pivotHeight);
     this.pivot.x += (t.x - this.pivot.x) * (1 - Math.exp(-dt * 14));
     this.pivot.z += (t.z - this.pivot.z) * (1 - Math.exp(-dt * 14));
     this.pivot.y += (py - this.pivot.y) * (1 - Math.exp(-dt * 8));
@@ -115,7 +129,17 @@ export class CameraRig {
     const cy = Math.cos(this.pitch);
     const rightX = Math.cos(this.yaw);
     const rightZ = -Math.sin(this.yaw);
-    const shoulderPt = this.tmpA.set(this.pivot.x + rightX * this.shoulderNow, this.pivot.y, this.pivot.z + rightZ * this.shoulderNow);
+    // ไหล่ไม่ทะลุผนัง: เช็กเส้นจากกลางตัวไปจุดไหล่ (เผื่อ 0.25 ม.) ก่อน ชิดผนังด้านไหล่แล้วไหล่หดเข้าหาตัว
+    const reachS = Math.abs(this.shoulderNow) + 0.25;
+    const sgn = Math.sign(this.shoulderNow) || 1;
+    const sideEnd = this.tmpC.set(this.pivot.x + rightX * reachS * sgn, this.pivot.y, this.pivot.z + rightZ * reachS * sgn);
+    let sHit = 1;
+    if (world.colliders) sHit = Math.min(sHit, world.colliders.segment(this.pivot.x, this.pivot.z, this.pivot.y, sideEnd.x, sideEnd.z, sideEnd.y, world.heightAt, 0.3));
+    if (world.blockers) sHit = Math.min(sHit, world.blockers(this.pivot, sideEnd));
+    const sideWant = Math.max(0, (sHit * reachS - 0.25) / Math.max(0.01, Math.abs(this.shoulderNow)));
+    this.sideHit = sideWant < this.sideHit ? sideWant : this.sideHit + (sideWant - this.sideHit) * (1 - Math.exp(-dt * 3));
+    const sh = this.shoulderNow * Math.min(1, this.sideHit);
+    const shoulderPt = this.tmpA.set(this.pivot.x + rightX * sh, this.pivot.y, this.pivot.z + rightZ * sh);
     const want = this.tmpB.set(
       shoulderPt.x + Math.sin(this.yaw) * cy * this.dist,
       shoulderPt.y - Math.sin(this.pitch) * this.dist,
@@ -130,7 +154,7 @@ export class CameraRig {
       const x = shoulderPt.x + (want.x - shoulderPt.x) * f;
       const y = shoulderPt.y + (want.y - shoulderPt.y) * f;
       const z = shoulderPt.z + (want.z - shoulderPt.z) * f;
-      if (y < world.heightAt(x, z) + 0.35) { hit = Math.max(0, f - 1 / steps); break; }
+      if (y < world.heightAt(x, z) + CAM.groundClear + 0.05) { hit = Math.max(0, f - 1 / steps); break; }
     }
     if (world.colliders) hit = Math.min(hit, world.colliders.segment(shoulderPt.x, shoulderPt.z, shoulderPt.y, want.x, want.z, want.y, world.heightAt, 0.3));
     if (world.blockers) hit = Math.min(hit, world.blockers(shoulderPt, want));
@@ -138,6 +162,9 @@ export class CameraRig {
     this.hit = hit < this.hit ? hit : this.hit + (hit - this.hit) * (1 - Math.exp(-dt * 3));
     const f = Math.max(0.12, this.hit * 0.95);
     this.pos.set(shoulderPt.x + (want.x - shoulderPt.x) * f, shoulderPt.y + (want.y - shoulderPt.y) * f, shoulderPt.z + (want.z - shoulderPt.z) * f);
+    // ระยะต่ำสุด 0.12 อาจอยู่ในเนินที่ชิดหลัง ยกกล้องขึ้นเหนือพื้นตรงนั้นแทน (เดิมจมดินมองทะลุภูเขา)
+    const floorHere = world.heightAt(this.pos.x, this.pos.z) + CAM.groundClear;
+    if (this.pos.y < floorHere) this.pos.y = floorHere;
 
     // โยกตามจังหวะก้าว
     const bobAmp = t.state === 'ground' ? (t.running ? CAM.bob.run : CAM.bob.walk) * Math.min(1, t.speed / 1.5) : 0;

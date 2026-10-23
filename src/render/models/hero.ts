@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { HERO_SCALE } from '../../config/scale';
 
 // ตัวละคร: ชุดอวกาศสีขาวหม่น 4 แขน ไฟฟ้าที่หน้าอก หัวเป็นโหลแก้วมีน้ำ มีปลาหมึกสีชมพูอมม่วงอยู่ข้างใน
 // ขยับท่าด้วยโค้ด (เดิน วิ่ง ว่าย ปีน ลอยกลางอากาศ ยืนหายใจ)
@@ -97,6 +98,8 @@ export class HeroModel {
   private breath = 0;
 
   constructor() {
+    // ปั้นตามขนาดเดิม (สูง 2.065 ม.) แล้วย่อทั้งตัวให้สูง 1.5 ม. ตามสัดส่วนจริง (src/config/scale.ts)
+    this.root.scale.setScalar(HERO_SCALE);
     this.root.add(this.body);
     this.body.position.y = 0.98;
     this.body.add(this.torso);
@@ -278,7 +281,7 @@ export function remainsModel(): THREE.Group {
     const a = i * 0.7;
     s.position.set(Math.cos(a) * (0.35 + (i % 4) * 0.12), 0.04, -1.05 + Math.sin(a) * (0.3 + (i % 3) * 0.1));
     s.rotation.set(i, i * 2, i * 3);
-    g.add(s);
+    h.root.add(s); // อยู่ในตัวที่ย่อแล้ว เศษแก้วจะอยู่ตรงหัวพอดี
   }
   return g;
 }

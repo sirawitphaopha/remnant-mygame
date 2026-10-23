@@ -6,8 +6,10 @@ export interface P2 { x: number; z: number }
 /** ยานกับจุดเกิด · ที่ราบเล็กทางตะวันตกเฉียงใต้ */
 export const SHIP: P2 & { radius: number; height: number } = { x: -200, z: 210, radius: 22, height: 11 };
 /** ระยะรอบยาน: กด E เข้ายาน · อุ่นร่างกาย (ครอบจุดเกิดใหม่ เกิดตอนกลางคืนจะได้ไม่หนาวทันที) */
-export const SHIP_ENTER_RADIUS = 9;
-export const SHIP_WARM_RADIUS = 16;
+/** รัศมีตัวยาน (ขอบจาน) ตามโมเดลใน render/models/props.ts */
+export const SHIP_HULL_RADIUS = 5.25;
+export const SHIP_ENTER_RADIUS = SHIP_HULL_RADIUS + 3.75;
+export const SHIP_WARM_RADIUS = SHIP_HULL_RADIUS + 10.75;
 export const SPAWN_POINT: P2 & { heading: number } = { x: -196, z: 196, heading: Math.PI * 0.8 };
 
 /** เมืองพังในหุบเขา */

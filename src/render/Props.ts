@@ -1,3 +1,4 @@
+import { STREET } from '../config/scale';
 import * as THREE from 'three';
 import type { CircleColliders } from '../world/colliders';
 import type { Prop } from '../world/props';
@@ -39,10 +40,11 @@ export class Props {
       // ของใหญ่กันไม่ให้เดินทะลุ
       const fx = -Math.sin(p.rot);
       const fz = -Math.cos(p.rot);
-      if (p.kind === 'car') for (const o of [-1.2, 0, 1.2]) colliders.add({ x: p.x + fx * o, z: p.z + fz * o, r: 0.95, top: 1.5 });
-      if (p.kind === 'bus') for (const o of [-3.8, -1.3, 1.3, 3.8]) colliders.add({ x: p.x + fx * o, z: p.z + fz * o, r: 1.3, top: 3 });
-      if (p.kind === 'lamp') colliders.add({ x: p.x, z: p.z, r: 0.15, top: 6 });
-      if (p.kind === 'mailbox') colliders.add({ x: p.x, z: p.z, r: 0.35, top: 1.6 });
+      // ตัวชนเป็นวงกลมเรียงตามความยาวรถ (ขนาดจาก src/config/scale.ts)
+      if (p.kind === 'car') for (const o of [-1.35, 0, 1.35]) colliders.add({ x: p.x + fx * o, z: p.z + fz * o, r: 0.92, top: STREET.car.height });
+      if (p.kind === 'bus') for (const o of [-4.6, -1.55, 1.55, 4.6]) colliders.add({ x: p.x + fx * o, z: p.z + fz * o, r: 1.28, top: STREET.bus.height });
+      if (p.kind === 'lamp') colliders.add({ x: p.x, z: p.z, r: 0.16, top: STREET.lampHeight });
+      if (p.kind === 'mailbox') colliders.add({ x: p.x, z: p.z, r: 0.3, top: STREET.mailboxHeight });
       if (p.kind === 'sign') colliders.add({ x: p.x, z: p.z, r: 0.1, top: 3 });
     }
     this.ship = shipModel();

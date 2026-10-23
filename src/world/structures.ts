@@ -1,5 +1,6 @@
 // สิ่งก่อสร้างทรงกล่อง (ผนังตึก หลังคา พื้นสะพาน ซากปูน) · ชน ยืนบน ปีน หลบหนาว กล้องไม่ทะลุ
 // กติกาล้วน ไม่แตะภาพ
+import { HERO } from '../config/scale';
 
 export interface Box {
   x: number;
@@ -57,10 +58,10 @@ export class Structures {
     return Math.abs(lx) <= b.hx + pad && Math.abs(lz) <= b.hz + pad;
   }
 
-  /** พื้นที่ยืนได้สูงสุดตรงนั้นที่ไม่สูงกว่าเท้าเกิน 0.6 ม. (ยืนบนหลังคา พื้นสะพาน ซากปูน) */
+  /** พื้นที่ยืนได้สูงสุดตรงนั้นที่ไม่สูงกว่าเท้าเกินระยะก้าวขึ้น (ยืนบนหลังคา พื้นสะพาน ซากปูน) */
   floorAt(x: number, z: number, feetY: number): number {
     let best = -Infinity;
-    for (const b of this.near(x, z)) if (b.y1 <= feetY + 0.6 && b.y1 > best && Structures.inside(b, x, z)) best = b.y1;
+    for (const b of this.near(x, z)) if (b.y1 <= feetY + HERO.stepUp && b.y1 > best && Structures.inside(b, x, z)) best = b.y1;
     return best;
   }
 
@@ -72,7 +73,7 @@ export class Structures {
     let hit: Box | null = null;
     for (let pass = 0; pass < 2; pass++) {
       for (const b of this.near(x, z)) {
-        if (feetY >= b.y1 - 0.3 || feetY + 1.7 <= b.y0) continue;
+        if (feetY >= b.y1 - 0.3 || feetY + HERO.bodyHeight <= b.y0) continue;
         const [lx, lz] = Structures.local(b, x, z);
         const px = b.hx + r - Math.abs(lx);
         const pz = b.hz + r - Math.abs(lz);
@@ -93,7 +94,7 @@ export class Structures {
 
   /** มีหลังคาอยู่เหนือหัวไหม (หลบหนาว) */
   roofOver(x: number, y: number, z: number): boolean {
-    for (const b of this.near(x, z)) if (b.y0 > y + 1.6 && b.y0 < y + 8 && Structures.inside(b, x, z)) return true;
+    for (const b of this.near(x, z)) if (b.y0 > y + HERO.roofClear && b.y0 < y + 8 && Structures.inside(b, x, z)) return true;
     return false;
   }
 

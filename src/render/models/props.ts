@@ -1,3 +1,4 @@
+import { STREET } from '../../config/scale';
 import * as THREE from 'three';
 import { jitter } from './build';
 
@@ -24,25 +25,28 @@ function m(geo: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0, z 
 }
 
 function mossPatch(r: number, x: number, y: number, z: number): THREE.Mesh {
-  return m(jitter(new THREE.IcosahedronGeometry(r, 1).scale(1, 0.25, 1), r * 0.25, 2), MOSS, x, y, z);
+  const moss = m(jitter(new THREE.IcosahedronGeometry(r, 1).scale(1, 0.25, 1), r * 0.25, 2), MOSS, x, y, z);
+  moss.userData.moss = true; // เทสขนาดของจริงวัดเฉพาะตัวรถ ไม่นับมอสที่ขึ้นทับ
+  return moss;
 }
 
 export function carModel(variant: number): THREE.Group {
   const g = new THREE.Group();
   const paint = PAINT_FADED[variant % PAINT_FADED.length];
-  g.add(m(new THREE.BoxGeometry(1.8, 0.7, 4.2), paint, 0, 0.55, 0));
-  g.add(m(new THREE.BoxGeometry(1.6, 0.6, 2.2), paint, 0, 1.15, 0.2));
-  g.add(m(new THREE.BoxGeometry(1.62, 0.42, 0.06), GLASS_DARK, 0, 1.18, -0.92));
-  g.add(m(new THREE.BoxGeometry(0.06, 0.4, 1.8), GLASS_DARK, 0.81, 1.18, 0.2), m(new THREE.BoxGeometry(0.06, 0.4, 1.8), GLASS_DARK, -0.81, 1.18, 0.2));
+  // รถเก๋งยาว 4.5 กว้าง 1.8 สูง 1.45 ม. (src/config/scale.ts)
+  g.add(m(new THREE.BoxGeometry(1.8, 0.7, 4.5), paint, 0, 0.55, 0));
+  g.add(m(new THREE.BoxGeometry(1.6, 0.6, 2.4), paint, 0, 1.15, 0.2));
+  g.add(m(new THREE.BoxGeometry(1.62, 0.42, 0.06), GLASS_DARK, 0, 1.18, -1.02));
+  g.add(m(new THREE.BoxGeometry(0.06, 0.4, 2.0), GLASS_DARK, 0.81, 1.18, 0.2), m(new THREE.BoxGeometry(0.06, 0.4, 2.0), GLASS_DARK, -0.81, 1.18, 0.2));
   // สนิมเป็นแผ่น
-  g.add(m(new THREE.BoxGeometry(1.82, 0.25, 1.2), RUST, 0, 0.42, 1.4), m(new THREE.BoxGeometry(1.0, 0.05, 1.1), RUST2, 0.3, 0.91, -1.4));
+  g.add(m(new THREE.BoxGeometry(1.82, 0.25, 1.2), RUST, 0, 0.42, 1.5), m(new THREE.BoxGeometry(1.0, 0.05, 1.1), RUST2, 0.3, 0.91, -1.5));
   // ล้อแบน ยางแตก
-  for (const [x, z] of [[0.85, 1.35], [-0.85, 1.35], [0.85, -1.35], [-0.85, -1.35]]) {
+  for (const [x, z] of [[0.78, 1.45], [-0.78, 1.45], [0.78, -1.45], [-0.78, -1.45]]) {
     const w = m(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 12).rotateZ(Math.PI / 2), TIRE, x, 0.26, z);
     w.scale.y = 0.8;
     g.add(w);
   }
-  g.add(mossPatch(0.6, 0.2, 1.45, 0.5), mossPatch(0.5, -0.5, 0.9, -1.6));
+  g.add(mossPatch(0.6, 0.2, 1.45, 0.5), mossPatch(0.45, -0.3, 0.9, -1.75));
   g.rotation.z = (variant % 3 - 1) * 0.03;
   return g;
 }
@@ -50,22 +54,24 @@ export function carModel(variant: number): THREE.Group {
 export function busModel(): THREE.Group {
   const g = new THREE.Group();
   const body = mat(0x8a7a3a, 0.9, 0.2);
-  g.add(m(new THREE.BoxGeometry(2.5, 2.6, 10), body, 0, 1.65, 0));
-  for (let i = 0; i < 6; i++) {
-    g.add(m(new THREE.BoxGeometry(2.54, 0.8, 1.2), GLASS_DARK, 0, 2.2, -4 + i * 1.6));
+  // รถบัสยาว 12 กว้าง 2.5 สูง 3.2 ม.
+  g.add(m(new THREE.BoxGeometry(2.5, 2.85, 12), body, 0, 1.775, 0));
+  for (let i = 0; i < 7; i++) {
+    g.add(m(new THREE.BoxGeometry(2.54, 0.85, 1.25), GLASS_DARK, 0, 2.4, -4.8 + i * 1.6));
   }
-  g.add(m(new THREE.BoxGeometry(2.56, 0.5, 10.02), RUST, 0, 0.55, 0));
-  for (const z of [3.4, -3.4]) for (const x of [1.2, -1.2]) g.add(m(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 12).rotateZ(Math.PI / 2), TIRE, x, 0.45, z));
-  g.add(mossPatch(1.2, 0.3, 2.95, 1.5), mossPatch(1.0, -0.4, 2.95, -3));
+  g.add(m(new THREE.BoxGeometry(2.56, 0.5, 12.02), RUST, 0, 0.6, 0));
+  for (const z of [4.2, -4.2]) for (const x of [1.2, -1.2]) g.add(m(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 12).rotateZ(Math.PI / 2), TIRE, x, 0.45, z));
+  g.add(mossPatch(1.2, 0.3, 3.2, 1.8), mossPatch(1.0, -0.4, 3.2, -3.6));
   g.rotation.z = 0.06;
   return g;
 }
 
 export function lampModel(): THREE.Group {
   const g = new THREE.Group();
-  g.add(m(new THREE.CylinderGeometry(0.08, 0.12, 6, 8).translate(0, 3, 0), POST));
-  g.add(m(new THREE.CylinderGeometry(0.05, 0.05, 1.6, 6).rotateZ(Math.PI / 2).translate(0.75, 5.9, 0), POST));
-  g.add(m(new THREE.BoxGeometry(0.5, 0.18, 0.3), METAL, 1.45, 5.8, 0));
+  // เสาไฟถนนสูง 8 ม.
+  g.add(m(new THREE.CylinderGeometry(0.09, 0.14, 8, 8).translate(0, 4, 0), POST));
+  g.add(m(new THREE.CylinderGeometry(0.05, 0.05, 1.8, 6).rotateZ(Math.PI / 2).translate(0.85, 7.9, 0), POST));
+  g.add(m(new THREE.BoxGeometry(0.55, 0.18, 0.3), METAL, 1.65, 7.8, 0));
   g.rotation.z = 0.05;
   return g;
 }
@@ -77,6 +83,8 @@ export function mailboxModel(): THREE.Group {
   g.add(m(new THREE.CylinderGeometry(0.275, 0.275, 0.5, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2), blue, 0, 1.4, 0));
   g.add(m(new THREE.BoxGeometry(0.4, 0.04, 0.02), METAL, 0, 1.15, -0.26));
   g.add(m(new THREE.BoxGeometry(0.4, 0.5, 0.4), RUST, 0, 0.25, 0));
+  // ปั้นไว้สูง 1.675 ม. ย่อความสูงเหลือ 1.27 ม. ตามตู้จริง
+  g.scale.y = STREET.mailboxHeight / 1.675;
   return g;
 }
 

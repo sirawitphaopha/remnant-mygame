@@ -68,10 +68,12 @@
 .toast.danger { border-color: rgba(255,90,90,.6); }
 
 /* ป้ายกดปุ่มกลางจอ */
-.prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; font-size: 14px;
+/* ป้ายกดปุ่มอยู่ข้างตัวละคร ฝั่งตรงข้ามไหล่กล้อง (ตัวสูง 1.5 ม. อยู่กลางจอ ป้ายกลางจอทับตัว) */
+.prompt { position: absolute; left: calc(50% + 9vw); top: 58%; display: flex; align-items: center; gap: 8px; font-size: 14px;
   padding: 6px 11px; background: rgba(0,0,0,.5); border-radius: 5px; border: 1px solid rgba(255,255,255,.2); }
 .prompt kbd { font-family: inherit; font-weight: 600; font-size: 12px; padding: 1px 7px; border-radius: 3px; background: #fff; color: #102020; text-shadow: none; }
 .prompt[hidden] { display: none; }
+.prompt.flip { left: auto; right: calc(50% + 9vw); }
 
 /* เป้าเล็งกลางจอ (โผล่ตอนสแกนหรือเล็ง) */
 .reticle { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; transform: translate(-50%, -50%);

@@ -1,3 +1,4 @@
+import { BUILDING } from '../config/scale';
 import { WORLD } from '../config/game';
 import { BRIDGE, RIVER, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from './layout';
 import { rng } from './noise';
@@ -49,7 +50,7 @@ export function buildTown(t: Terrain, s: Structures): TownLayout {
     const floors = 2 + Math.floor(r() * 5);
     const n = buildings.length;
     const style: BuildingStyle = n % 5 === 1 ? 'shelter' : n % 3 === 2 ? 'ruin' : 'solid';
-    const h = style === 'shelter' ? 4.2 : floors * 3.2 * (style === 'ruin' ? 0.6 : 1);
+    const h = style === 'shelter' ? BUILDING.shelterHeight : floors * BUILDING.storey * (style === 'ruin' ? 0.6 : 1);
     // ฐานตึกเท่ากับจุดต่ำสุดของพื้นใต้ตึก ตึกไม่ลอย
     let y = Infinity;
     for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) y = Math.min(y, t.heightAt(x + (px * w) / 2, z + (pz * d) / 2));
@@ -72,9 +73,12 @@ export function buildTown(t: Terrain, s: Structures): TownLayout {
       wall(0, hd - th / 2, hw, th / 2);
       wall(-hw + th / 2, 0, th / 2, hd);
       wall(hw - th / 2, 0, th / 2, hd);
-      const door = 1.6;
+      const door = BUILDING.doorWidth / 2; // ครึ่งความกว้างช่องประตู
       wall(-(hw + door) / 2, -hd + th / 2, (hw - door) / 2, th / 2);
       wall((hw + door) / 2, -hd + th / 2, (hw - door) / 2, th / 2);
+      // คานเหนือประตู (กล้องชนได้ ตัวละครเดินลอดได้)
+      const top = at(0, -hd + th / 2);
+      s.add({ x: top.x, z: top.z, hx: door, hz: th / 2, rot: b.rot, y0: b.y + BUILDING.doorHeight, y1: b.y + b.h, tag: b.key });
       s.add({ x: b.x, z: b.z, hx: hw, hz: hd, rot: b.rot, y0: b.y + b.h, y1: b.y + b.h + 0.3, tag: b.key });
     } else {
       s.add({ x: b.x, z: b.z, hx: b.w / 2, hz: b.d / 2, rot: b.rot, y0: b.y - 1, y1: b.y + b.h, tag: b.key });

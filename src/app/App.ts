@@ -5,7 +5,7 @@ import { SPAWN_POINT } from '../world/layout';
 import { Terrain } from '../world/Terrain';
 import { CircleColliders } from '../world/colliders';
 import { Player } from '../player/Player';
-import { CameraRig } from '../render/CameraRig';
+import { CameraRig, type CameraWorld } from '../render/CameraRig';
 import { HeroModel } from '../render/models/hero';
 import { Sky } from '../render/Sky';
 import { Grass } from '../render/Grass';
@@ -18,6 +18,7 @@ import { ExploreMap } from '../core/explore';
 import { findGear, holding, equipToArm, starterPack, type Loadout } from '../core/gear';
 import { SHIP, SHIP_ENTER_RADIUS, SHIP_WARM_RADIUS } from '../world/layout';
 import { MOVE, WORLD } from '../config/game';
+import { REACH } from '../config/scale';
 import { Hud, type MapMarker } from '../ui/Hud';
 import { BigMap } from '../ui/BigMap';
 import { MapImage } from '../ui/MapImage';
@@ -80,6 +81,7 @@ export class App {
   private q: QualityPreset = QUALITY[DEFAULT_QUALITY];
   readonly hero = new HeroModel();
   readonly colliders = new CircleColliders();
+  private camWorld: CameraWorld | null = null;
   /** ของที่พกอยู่ แถบล่าง 9 ช่อง และแขน 4 ข้าง */
   loadout: Loadout = starterPack();
   readonly explore = new ExploreMap();
@@ -585,7 +587,8 @@ export class App {
     const p = this.player;
     const c = caveAt(this.caves, x, z);
     if (c && p.y < this.terrain.heightAt(p.x, p.z) - 2) return c.floor;
-    return this.terrain.heightAt(x, z);
+    // นอกถ้ำ กล้องไม่ลงใต้ผิวน้ำ (ไม่มีภาพใต้น้ำ เดิมว่ายแล้วเงยกล้อง มองเห็นก้นทะเลสาบใสแจ๋ว)
+    return Math.max(this.terrain.heightAt(x, z), WORLD.waterLevel);
   }
 
   /** กล้องชนผนังตึก · ในถ้ำกล้องต้องอยู่ในอุโมงค์ */
@@ -650,7 +653,7 @@ export class App {
     this.vegetation.rocks.forEach((r, i) => {
       if (Math.abs(r.x - p.x) < 30 && Math.abs(r.z - p.z) < 30) test(`rock-${i}`, 'rock', r.x, r.y + 0.4 * r.scale, r.z);
     });
-    const H: Record<string, number> = { car: 1, bus: 1.6, lamp: 4, mailbox: 1, sign: 2.6 };
+    const H: Record<string, number> = { car: 0.9, bus: 1.6, lamp: 5, mailbox: 0.8, sign: 2.6 };
     for (const pp of this.props.all) {
       if (pp.taken || Math.abs(pp.prop.x - p.x) > 30 || Math.abs(pp.prop.z - p.z) > 30) continue;
       test(pp.prop.key, pp.prop.kind, pp.prop.x, pp.y + (H[pp.prop.kind] ?? 0.12), pp.prop.z);
@@ -778,7 +781,7 @@ export class App {
 
   /**
    * ป้ายกดปุ่ม: ของใกล้ตัวที่เก็บได้ ซาก กระเป๋าที่วางไว้ ยาน
-   * ของที่อยู่ใกล้ที่สุดชนะ (ต้องอยู่ชั้นเดียวกัน ต่างความสูงไม่เกิน 1.6 ม.) · ยานรับเฉพาะตอนไม่มีของอื่นในระยะหยิบ
+   * ของที่อยู่ใกล้ที่สุดชนะ (ต้องอยู่ชั้นเดียวกัน ต่างความสูงไม่เกิน REACH.vertical) · ยานรับเฉพาะตอนไม่มีของอื่นในระยะหยิบ
    * เดิมยานถูกเช็กก่อน กระเป๋าหรือซากที่อยู่ใกล้ยานจึงหยิบคืนไม่ได้อีกเลย
    */
   private updateInteract(): void {
@@ -786,12 +789,12 @@ export class App {
     this.interact = null;
     const reach = (x: number, y: number, z: number, r: number) => {
       const d = Math.hypot(x - p.x, z - p.z);
-      return d < r && Math.abs(y - p.y) < 1.6 ? d : Infinity;
+      return d < r && Math.abs(y - p.y) < REACH.vertical ? d : Infinity;
     };
     let bestD = Infinity;
     for (const c of this.corpses) {
       if (!c.slots.some(Boolean)) continue;
-      const d = reach(c.x, c.y, c.z, 2.2);
+      const d = reach(c.x, c.y, c.z, REACH.corpse);
       if (d >= bestD) continue;
       bestD = d;
       this.interact = {
@@ -804,7 +807,7 @@ export class App {
       };
     }
     for (const b of this.droppedBags) {
-      const d = reach(b.x, b.y, b.z, 1.8);
+      const d = reach(b.x, b.y, b.z, REACH.bag);
       if (d >= bestD) continue;
       bestD = d;
       this.interact = {
@@ -822,7 +825,7 @@ export class App {
       if (pp.taken) continue;
       const k = kindOf(pp.prop.kind);
       if (!k?.small) continue;
-      const d = reach(pp.prop.x, pp.y, pp.prop.z, 2.0);
+      const d = reach(pp.prop.x, pp.y, pp.prop.z, REACH.item);
       if (d >= bestD) continue;
       bestD = d;
       const key = pp.prop.key;
@@ -976,7 +979,9 @@ export class App {
     this.hero.root.position.set(p.x, p.y, p.z);
     this.hero.root.rotation.y = p.heading;
     this.hero.pose(dt, p.sliding ? 'air' : p.state, p.stepPhase, p.speed, p.running, this.elapsed);
-    this.rig.update(dt, p, { heightAt: (x, z) => this.camGround(x, z), colliders: this.colliders, blockers: (a, b) => this.camBlock(a, b) }, this.aiming || this.tools.aiming, this.elapsed - inp.lastMouseMove);
+    // ข้อมูลโลกของกล้องสร้างครั้งเดียว (เดิมสร้างวัตถุกับฟังก์ชันใหม่ทุกเฟรม)
+    this.camWorld ??= { heightAt: (x, z) => this.camGround(x, z), colliders: this.colliders, blockers: (a, b) => this.camBlock(a, b) };
+    this.rig.update(dt, p, this.camWorld, this.aiming || this.tools.aiming, this.elapsed - inp.lastMouseMove);
     this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
     this.vegetation.update(p.x, p.z);
     this.grass.update(p.x, p.z);
@@ -1043,6 +1048,7 @@ export class App {
         : !this.input.locked && this.input.lockFailed ? { key: '', text: t('clickToPlay') } : null,
       reticle: this.aiming || this.tools.aiming,
       status: this.statusChips(),
+      shoulder: this.rig.side,
     }, this.elapsed);
   }
 

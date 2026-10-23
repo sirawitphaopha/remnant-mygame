@@ -41,6 +41,8 @@ export interface HudView {
   markers: MapMarker[];
   prompt: { key: string; text: string } | null;
   reticle: boolean;
+  /** ไหล่กล้อง 1 = ขวา (ตัวละครค่อนซ้าย ป้ายอยู่ขวา) -1 = ซ้าย */
+  shoulder?: number;
   /** ป้ายสถานะค้างมุมซ้ายบน (โหลร้าว หนาว ออกซิเจนลด) อยู่จนกว่าสถานะหาย ตามมอคอัปหน้า 3 */
   status?: { text: string; kind: 'warn' | 'danger' | '' }[];
 }
@@ -218,6 +220,7 @@ export class Hud {
       this.lastStatus = statusKey;
       this.statusBox.innerHTML = (v.status ?? []).map((s) => `<div class="toast ${s.kind}">${s.text}</div>`).join('');
     }
+    this.promptEl.classList.toggle('flip', (v.shoulder ?? 1) < 0);
     const promptKey = v.prompt ? v.prompt.key + v.prompt.text : '';
     if (promptKey !== this.lastPrompt) {
       this.lastPrompt = promptKey;

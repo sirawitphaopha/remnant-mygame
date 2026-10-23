@@ -1,4 +1,6 @@
 // ค่าสมดุลทั้งเกมอยู่ที่นี่ที่เดียว · หน่วยระยะเป็นเมตร เวลาเป็นวินาที น้ำหนักเป็นกิโลกรัม
+// ขนาดของจริง (ตัวละคร ตึก รถ สัตว์) อยู่ที่ scale.ts
+import { HERO } from './scale';
 
 /** ขนาดโลก 1 × 1 กม. จุดกึ่งกลางอยู่ที่ (0, 0) */
 export const WORLD = {
@@ -19,8 +21,8 @@ export const MOVE = {
   gravity: 9.81,
   turnRate: 10,
   accel: 8,
-  radius: 0.35,
-  height: 1.8,
-  /** ความสูงหัว (โหลแก้ว) จากเท้า ใช้เช็กก๊าซกับจมน้ำ */
-  headHeight: 1.7,
+  radius: HERO.radius,
+  height: HERO.height,
+  /** ความสูงหัว (กลางโหลแก้ว) จากเท้า ใช้เช็กก๊าซกับจมน้ำ */
+  headHeight: HERO.headHeight,
 } as const;

@@ -1,3 +1,4 @@
+import { BUILDING } from '../config/scale';
 import * as THREE from 'three';
 import type { BridgePart, Building } from '../world/town';
 import { rng } from '../world/noise';
@@ -86,13 +87,13 @@ export class Town {
           mesh.castShadow = mesh.receiveShadow = true;
           g.add(mesh);
         };
-        const door = 1.6;
+        const door = BUILDING.doorWidth / 2; // ครึ่งความกว้างช่องประตู
         add(wallBox(b.w, b.h + 1, th), 0, (b.h - 1) / 2, hd - th / 2, wall);
         add(wallBox(th, b.h + 1, b.d), -hw + th / 2, (b.h - 1) / 2, 0, wall);
         add(wallBox(th, b.h + 1, b.d), hw - th / 2, (b.h - 1) / 2, 0, wall);
         add(wallBox(hw - door, b.h + 1, th), -(hw + door) / 2, (b.h - 1) / 2, -hd + th / 2, wall);
         add(wallBox(hw - door, b.h + 1, th), (hw + door) / 2, (b.h - 1) / 2, -hd + th / 2, wall);
-        add(new THREE.BoxGeometry(door * 2, 1.2, th), 0, b.h - 0.6, -hd + th / 2, wall);
+        add(new THREE.BoxGeometry(door * 2, b.h - BUILDING.doorHeight, th), 0, (b.h + BUILDING.doorHeight) / 2, -hd + th / 2, wall);
         add(new THREE.BoxGeometry(b.w + 0.3, 0.3, b.d + 0.3), 0, b.h + 0.15, 0, roofMat);
         add(jitter(new THREE.BoxGeometry(b.w * 0.6, 0.15, b.d * 0.5, 4, 1, 4), 0.2, 0.6, b.x), b.w * 0.1, b.h + 0.34, 0, mossMat);
         // ข้างในมีเศษของ ให้รู้ว่าเคยมีคนอยู่

@@ -104,12 +104,17 @@ export class Animals {
     return hit;
   }
 
+  /** จำนวนสัตว์ต่อชนิด ใช้ซ้ำทุกเฟรม */
+  private counts = new Map<(typeof SPECIES)[number], number>();
+
   update(dt: number, px: number, py: number, pz: number, night: boolean, time: number): void {
     // เกิดใหม่ให้ครบจำนวนตามเวลา
+    this.counts.clear();
+    for (const a of this.list) this.counts.set(a.s, (this.counts.get(a.s) ?? 0) + 1);
     for (const s of SPECIES) {
       if (s.move === 'glow') continue;
       const active = s.active === 'always' || (s.active === 'night') === night;
-      const have = this.list.filter((a) => a.s === s).length;
+      const have = this.counts.get(s) ?? 0;
       if (active && have < s.count && Math.random() < dt * 2) this.spawn(s, px, pz);
     }
     // หายเมื่อไกลเกิน หรือหมดเวลาออกหากิน
