@@ -20,6 +20,9 @@ const BUILD_PER_FRAME = 2;
 /** เก็บแผ่นที่ไม่ได้ใช้ไว้ได้เท่านี้ เกินแล้วคืนหน่วยความจำแผ่นที่ไม่ได้ใช้นานที่สุด */
 export const CACHE_LIMIT = 260;
 
+/** ความเปียกของพื้น 0 ถึง 1 (ฝน) ใช้ร่วมกันทุกแผ่น */
+export const WET = { value: 0 };
+
 const C = {
   grassA: new THREE.Color(0.22, 0.31, 0.12),
   grassB: new THREE.Color(0.31, 0.37, 0.16),
@@ -85,6 +88,17 @@ export class TerrainMesh {
 
   constructor(private terrain: Terrain) {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true, map: makeDetailTexture() });
+    // พื้นเปียก: สีเข้มขึ้น มีแสงสะท้อนฟ้าตอนมองเฉียง (แบบพื้นหลังฝน)
+    this.material.onBeforeCompile = (sh) => {
+      sh.uniforms.uWet = WET;
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uWet;')
+        .replace('#include <opaque_fragment>', `
+          float wetSheen = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 3.0);
+          outgoingLight = outgoingLight * (1.0 - 0.38 * uWet) + uWet * 0.05 * wetSheen * vec3(0.75, 0.8, 0.85);
+          #include <opaque_fragment>`);
+    };
+    this.material.customProgramCacheKey = () => 'terrain-wet';
     // แผ่นใหญ่สุดสร้างทันที ระหว่างรอแผ่นละเอียดจะได้มีพื้นให้เห็นเสมอ
     this.build(this.tile(0, 0, 0));
   }

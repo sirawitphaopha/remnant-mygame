@@ -10,6 +10,9 @@ export interface AudioEnv {
   field?: number;
   /** ใกล้น้ำตกแค่ไหน 0 ถึง 1 */
   fall?: number;
+  /** ฝน 0 ถึง 1 · อยู่ใต้หลังคา (เสียงฝนทึบลง) */
+  rain?: number;
+  roof?: boolean;
   /** ระยะถึงน้ำ (เมตร) */
   waterDist: number;
   /** อยู่ลึกในถ้ำ 0 ถึง 1 */
@@ -36,7 +39,7 @@ export class NatureAudio {
   private reverb!: ConvolverNode;
   private reverbGain!: GainNode;
   private noise!: AudioBuffer;
-  private beds: Record<'wind' | 'leaves' | 'water' | 'cave', { gain: GainNode; filter: BiquadFilterNode }> = {} as never;
+  private beds: Record<'wind' | 'leaves' | 'water' | 'cave' | 'rain', { gain: GainNode; filter: BiquadFilterNode }> = {} as never;
   private timers = { bird: 2, crow: 6, cricket: 0, frog: 3, owl: 8, drip: 1 };
   /** ระดับเสียงที่ตั้ง (หน้าตั้งค่า) */
   private natureVol = 0.8;
@@ -100,6 +103,7 @@ export class NatureAudio {
     this.beds.wind = this.bed('bandpass', 420, 0.6);
     this.beds.leaves = this.bed('highpass', 2400, 0.4);
     this.beds.water = this.bed('lowpass', 900, 0.7);
+    this.beds.rain = this.bed('bandpass', 2600, 0.5);
     this.beds.cave = this.bed('lowpass', 160, 1);
   }
 
@@ -112,6 +116,26 @@ export class NatureAudio {
       for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
     }
     return buf;
+  }
+
+  /** ฟ้าร้อง · delay = วินาทีหลังฟ้าแลบ (ไกลยิ่งช้า) */
+  thunder(delay = 1): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + delay;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.playbackRate.value = 0.35;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 180;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.5, t + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 4.5);
+    src.connect(f).connect(g).connect(this.natureBus);
+    src.start(t);
+    src.stop(t + 5);
   }
 
   /** เสียงพื้นหลังที่ดังตลอด ปรับความดังตามที่อยู่ */
@@ -171,6 +195,10 @@ export class NatureAudio {
     this.set('leaves', this.beds.leaves.gain, outside * (e.forest * (0.02 + 0.07 * e.gust) + (e.field ?? 0) * (0.025 + 0.1 * e.gust)));
     // น้ำไหล: ใกล้แม่น้ำหรือทะเลสาบ
     this.set('water', this.beds.water.gain, outside * (0.22 * Math.max(0, 1 - e.waterDist / 40) + 0.5 * (e.fall ?? 0)));
+    // ฝน: เสียงซ่าทั่วไป ใต้หลังคาทึบลงเหมือนฝนตกบนหลังคา · ในถ้ำลึกแทบไม่ได้ยิน
+    const rain = (e.rain ?? 0) * (1 - Math.min(1, e.cave * 2));
+    this.set('rain', this.beds.rain.gain, rain * (e.roof ? 0.14 : 0.28));
+    this.beds.rain.filter.frequency.setTargetAtTime(e.roof ? 900 : 2600, ctx.currentTime, 0.4);
     // ถ้ำ: เสียงต่ำ ๆ กับเสียงก้อง
     this.set('cave', this.beds.cave.gain, e.cave > 0.05 ? 0.12 : 0);
     this.reverbGain.gain.setTargetAtTime(e.cave > 0.05 ? 0.55 : 0.05, ctx.currentTime, 0.5);

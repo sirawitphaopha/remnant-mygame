@@ -44,6 +44,9 @@ import { buildCaves, caveAt, type Cave } from '../world/caves';
 import { buildTown, type TownLayout } from '../world/town';
 import { Town } from '../render/Town';
 import { Fish } from '../render/Fish';
+import { Rain, ValleyFog } from '../render/Rain';
+import { WET } from '../render/TerrainMesh';
+import { weatherAt, type Weather } from '../core/weather';
 import { Waterfall } from '../render/Waterfall';
 import { flowField, waterfallSpot } from '../world/water';
 
@@ -77,6 +80,13 @@ export class App {
   readonly vegetation: Vegetation;
   readonly grass: Grass;
   readonly fish: Fish;
+  readonly rain: Rain;
+  readonly valleyFog: ValleyFog;
+  /** อากาศตอนนี้ (core/weather.ts) · weatherForce = บังคับฝน 0 ถึง 1 (ตัวช่วยทดสอบ) */
+  weather: Weather = { rain: 0, cloud: 0, thunder: 0 };
+  weatherForce: number | undefined = undefined;
+  private flash = 0;
+  private jarDrops: THREE.Mesh | null = null;
   readonly waterfall: Waterfall;
   readonly player: Player;
   readonly rig: CameraRig;
@@ -216,6 +226,13 @@ export class App {
     this.scene.add(this.fish.group);
     this.waterfall = new Waterfall(fallSpot);
     this.scene.add(this.waterfall.group);
+    // ฝนรอบกล้อง หมอกเช้าในหุบ หยดน้ำบนโหล
+    this.rain = new Rain((x, z) => this.terrain.heightAt(x, z));
+    this.scene.add(this.rain.group);
+    this.valleyFog = new ValleyFog(WORLD.size);
+    this.scene.add(this.valleyFog.group);
+    this.jarDrops = jarDropsMesh();
+    this.hero.jarGlass.add(this.jarDrops);
     this.scene.add(this.water.mesh);
     // เมืองวางก่อนป่า ต้นไม้กับขอนไม้จะไม่ขึ้นในตึก (เดิมต้นไม้ 7 ต้นขึ้นในตึก ลำต้นทะลุหลังคา)
     this.town = buildTown(this.terrain, this.structures);
@@ -331,7 +348,7 @@ export class App {
       refillOxygen: () => (this.body.draining || this.body.oxygen < 0.9) && this.body.refill(),
       onInk: (x, y, z) => { this.animals.ink(x, y, z); },
       // แดดถึงตัวจริง: กลางวัน ไม่อยู่ในถ้ำ ไม่อยู่ใต้หลังคา
-      sunlit: () => this.skyState.sunHeight > 0.05 && this.caveDepth < 0.05 && !this.shelterAt(this.player.x, this.player.y, this.player.z),
+      sunlit: () => this.skyState.sunHeight > 0.05 && this.weather.rain < 0.3 && this.weather.cloud < 0.7 && this.caveDepth < 0.05 && !this.shelterAt(this.player.x, this.player.y, this.player.z),
       sound: (n) => (n === 'ink' ? this.audio.inkShot() : n === 'glue' ? this.audio.glue() : this.audio.click()),
     });
 
@@ -446,7 +463,10 @@ export class App {
       this.vegetation.update(this.camera.position.x, this.camera.position.z);
       this.grass.update(this.camera.position.x, this.camera.position.z);
     }
-    this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog);
+    this.weather = weatherAt(this.gameTime, this.weatherForce);
+    this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog, this.weather.cloud, this.weather.rain);
+    // หยุดเกมตอนอยู่ในถ้ำ ถ้ำยังมืดเท่าเดิม (เดิมสว่างจ้าข้างหลังหน้าหยุดเกม)
+    this.applyCaveDim();
     const d = this.skyState.sun;
     this.sun.position.set(this.camera.position.x + d[0] * 180, this.camera.position.y + Math.max(0.05, d[1]) * 180, this.camera.position.z + d[2] * 180);
     this.sun.target.position.copy(this.camera.position);
@@ -632,6 +652,8 @@ export class App {
     this.audio.update(dt, {
       night: this.sky.night,
       forest: forestDensity(this.terrain, p.x, p.z),
+      rain: this.weather.rain,
+      roof: this.shelterAt(p.x, p.y, p.z),
       fall: Math.max(0, 1 - Math.hypot(p.x - this.waterfall.spot.x, p.z - this.waterfall.spot.z) / 70),
       field: Math.min(1, Math.max(0, (grassHeightAt(this.terrain, p.x, p.z, 0.5) - 0.3) / 0.7)),
       waterDist: Math.max(0, waterDist),
@@ -1079,21 +1101,22 @@ export class App {
       if (bc) bc.visible = b.beacon && Math.sin(this.elapsed * 4) > -0.2;
     }
     this.updateHud();
-    this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog);
+    this.weather = weatherAt(this.gameTime, this.weatherForce);
+    this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog, this.weather.cloud, this.weather.rain);
     // ในถ้ำ แสงแดดกับแสงฟ้าค่อย ๆ หายตามความลึก เหลือไฟฉายกับเห็ดเรืองแสง
     const inCave = caveAt(this.caves, p.x, p.z);
     const under = inCave && p.y < this.terrain.heightAt(p.x, p.z) - 2 ? inCave.f : 0;
     this.caveDepth += (under - this.caveDepth) * Math.min(1, dt * 2);
-    const dim = 1 - 0.96 * Math.min(1, this.caveDepth / 0.3);
-    this.sun.intensity *= dim;
-    this.hemi.intensity *= dim;
+    this.applyCaveDim();
+    this.updateWeather(dt);
     this.cavesView.update(this.elapsed);
     this.animals.update(dt, p.x, p.y, p.z, this.sky.night > 0.5, this.elapsed);
     this.fish.update(dt, this.elapsed, p.x, p.z, this.sky.night < 0.5);
     this.waterfall.update(dt, 0.15 + 0.85 * this.sky.brightness);
     this.updateAudio(dt);
-    // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
-    const snap = 4;
+    // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับทีละจุดของภาพเงา กันเงาสั่น (เดิมขยับทีละ 4 ม. เงากระตุกทุก 4 ม. ที่เดิน)
+    const sc = this.sun.shadow.camera;
+    const snap = (sc.right - sc.left) / this.sun.shadow.mapSize.width;
     const sx = Math.round(p.x / snap) * snap;
     const sz = Math.round(p.z / snap) * snap;
     const d = (this.sun.userData.dir as [number, number, number] | undefined) ?? this.skyState.sun;
@@ -1153,6 +1176,46 @@ export class App {
     for (const g of this.townView.group.children) g.visible = near(g, 1300);
   }
 
+  /** ความเปียกของพื้นตอนนี้ (ตัวช่วยทดสอบดู) */
+  get wetness(): number {
+    return WET.value;
+  }
+
+  /** ในถ้ำแสงแดดกับแสงฟ้าหายตามความลึก (ใช้ทั้งตอนเล่นและตอนหยุดเกม) */
+  private applyCaveDim(): void {
+    const dim = 1 - 0.96 * Math.min(1, this.caveDepth / 0.3);
+    this.sun.intensity *= dim;
+    this.hemi.intensity *= dim;
+  }
+
+  /** ฝน ฟ้าแลบฟ้าร้อง พื้นเปียก หมอกเช้า หยดน้ำบนโหล */
+  private updateWeather(dt: number): void {
+    const p = this.player;
+    const w = this.weather;
+    const cam = this.camera.position;
+    const camRoof = this.structures.roofOver(cam.x, cam.y - 1.6, cam.z) || this.caveDepth > 0.2;
+    this.rain.update(dt, cam, w.rain, camRoof);
+    // พื้นค่อย ๆ เปียกตอนฝนตก ราว 40 วินาทีเปียกเต็ม แห้งช้ากว่า (ราว 3 นาที)
+    WET.value = Math.max(0, Math.min(1, WET.value + (w.rain > 0.1 ? dt / 40 : -dt / 180)));
+    this.valleyFog.update(dt, this.skyState.fog * (1 - 0.5 * w.rain), this.fog.color);
+    // ฟ้าแลบ แล้วฟ้าร้องตามมา (ไกลยิ่งช้า)
+    if (w.thunder > 0 && Math.random() < w.thunder * dt) {
+      this.flash = 1;
+      this.audio.thunder(0.4 + Math.random() * 3);
+    }
+    this.flash *= Math.exp(-dt * 9);
+    if (this.flash > 0.01) this.hemi.intensity += this.flash * 2.2 * (1 - Math.min(1, this.caveDepth * 3));
+    // หยดน้ำบนโหลแก้ว เกาะตอนอยู่กลางฝน ไหลช้า ๆ แห้งเมื่อเข้าที่ร่ม
+    if (this.jarDrops) {
+      const m = this.jarDrops.material as THREE.MeshBasicMaterial;
+      const out = !this.shelterAt(p.x, p.y, p.z) && this.caveDepth < 0.1;
+      const want = out ? w.rain : 0;
+      m.opacity += (want * 0.9 - m.opacity) * Math.min(1, dt * (want > m.opacity ? 0.5 : 0.15));
+      if (m.map) m.map.offset.y -= dt * 0.02 * w.rain;
+      this.jarDrops.visible = m.opacity > 0.02;
+    }
+  }
+
   /** ป้ายสถานะค้าง: บอกสิ่งที่กำลังทำร้ายร่างกายอยู่ และวิธีแก้ */
   private statusChips(): { text: string; kind: 'warn' | 'danger' | '' }[] {
     const out: { text: string; kind: 'warn' | 'danger' | '' }[] = [];
@@ -1174,4 +1237,29 @@ export class App {
       this.fpsFrames = 0;
     }
   }
+}
+
+/** หยดน้ำบนโหลแก้ว: ทรงกลมบางครอบโหล ลายหยดน้ำวาดลง canvas */
+function jarDropsMesh(): THREE.Mesh {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const c = cv.getContext('2d')!;
+  for (let i = 0; i < 90; i++) {
+    const x = Math.random() * 128;
+    const y = Math.random() * 128;
+    const r = 0.8 + Math.random() * 2.2;
+    c.fillStyle = `rgba(235,245,255,${0.35 + Math.random() * 0.4})`;
+    c.beginPath();
+    c.ellipse(x, y, r, r * (1.2 + Math.random()), 0, 0, Math.PI * 2);
+    c.fill();
+    if (Math.random() < 0.25) { c.fillRect(x - 0.4, y, 0.8, 6 + Math.random() * 10); }
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3, 2);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.232, 20, 14), mat);
+  m.visible = false;
+  m.renderOrder = 5;
+  return m;
 }

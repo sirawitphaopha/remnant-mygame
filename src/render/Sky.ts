@@ -21,6 +21,8 @@ const frag = /* glsl */ `
   uniform float uMoonLight;
   uniform float uMoonPhase;
   uniform float uNight;
+  uniform float uSunset;
+  uniform float uOvercast;
   uniform float uTime;
   varying vec3 vDir;
 
@@ -70,11 +72,15 @@ const frag = /* glsl */ `
     }
     col += vec3(0.6, 0.7, 0.9) * pow(max(dm, 0.0), 220.0) * 0.25 * uMoonLight * uNight;
 
+    // ตอนอาทิตย์ขึ้นตก ขอบฟ้าฝั่งดวงอาทิตย์เรืองแดงส้มกว้าง (พลบสวยกว่ารุ่งตามแหล่งอ้างอิง ใช้ค่าเดียวกันทั้งสองช่วง)
+    col += uSunColor * pow(max(ds, 0.0), 5.0) * uSunset * 0.7 * (1.0 - smoothstep(0.0, 0.4, h));
+    // ฟ้าครึ้มก่อนฝนกับตอนฝนตก
+    col = mix(col, uCloudShade * 1.1, uOvercast * 0.65);
     // เมฆ เลื่อนไปตามลม
     if (h > -0.02) {
       vec2 uv = dir.xz / (h + 0.18) * 1.1 + vec2(uTime * 0.004, uTime * 0.0015);
       float n = fbm(uv * 1.3) * 0.7 + fbm(uv * 3.1 + 7.0) * 0.3;
-      float cover = smoothstep(0.5, 0.78, n) * smoothstep(-0.02, 0.18, h);
+      float cover = max(smoothstep(0.5, 0.78, n), uOvercast * (0.7 + 0.3 * n)) * smoothstep(-0.02, 0.18, h);
       float sunSide = pow(max(ds, 0.0), 3.0);
       vec3 cloud = mix(uCloudShade, uCloudLit, smoothstep(0.45, 0.9, n) * 0.6 + 0.4 * sunSide);
       col = mix(col, cloud, cover * 0.92);
@@ -95,6 +101,15 @@ const NIGHT_H = c(0.012, 0.018, 0.03);
 const MOON_Z = c(0.02, 0.035, 0.08);
 const MOON_H = c(0.045, 0.06, 0.09);
 
+/** สีใช้ซ้ำทุกเฟรม (เดิม clone สีใหม่ 5 ตัวทุกเฟรม) */
+const TZ = new THREE.Color();
+const TH = new THREE.Color();
+const GREY = c(0.5, 0.53, 0.56);
+const WHITE = c(1, 1, 1);
+const CLOUD_DAY = c(0.55, 0.6, 0.66);
+const HEMI_DAY = c(0.8, 0.88, 0.95);
+const MOON_LIGHT = c(0.55, 0.66, 0.92);
+
 const smooth = (a: number, b: number, x: number) => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -114,6 +129,8 @@ export class Sky {
     uMoonLight: { value: 0 },
     uMoonPhase: { value: 0 },
     uNight: { value: 0 },
+    uSunset: { value: 0 },
+    uOvercast: { value: 0 },
     uTime: { value: 0 },
   };
   /** ข้อมูลไว้ให้ส่วนอื่นอ่าน (น้ำ เสียง ความหนาว) */
@@ -141,6 +158,9 @@ export class Sky {
     light: THREE.DirectionalLight,
     hemi: THREE.HemisphereLight,
     fog: THREE.FogExp2,
+    /** เมฆครึ้ม 0 ถึง 1 · ฝน 0 ถึง 1 (core/weather.ts) */
+    cloud = 0,
+    rain = 0,
   ): void {
     const u = this.uniforms;
     const sh = s.sunHeight;
@@ -150,8 +170,13 @@ export class Sky {
     const moonGlow = s.moonLight * moonUp;
     this.night = 1 - smooth(-0.12, 0.08, sh);
 
-    const zen = NIGHT_Z.clone().lerp(MOON_Z, moonGlow).lerp(DAY_Z, day).lerp(SET_Z, twilight * 0.7);
-    const hor = NIGHT_H.clone().lerp(MOON_H, moonGlow).lerp(DAY_H, day).lerp(SET_H, twilight * 0.85);
+    const zen = TZ.copy(NIGHT_Z).lerp(MOON_Z, moonGlow).lerp(DAY_Z, day).lerp(SET_Z, twilight * 0.7 * (1 - cloud));
+    const hor = TH.copy(NIGHT_H).lerp(MOON_H, moonGlow).lerp(DAY_H, day).lerp(SET_H, twilight * 0.85 * (1 - cloud));
+    // ครึ้มฝน ฟ้าออกเทา
+    zen.lerp(GREY, cloud * 0.55 * day);
+    hor.lerp(GREY, cloud * 0.5 * day);
+    u.uSunset.value = twilight * (1 - cloud);
+    u.uOvercast.value = cloud;
     u.uZenith.value.copy(zen);
     u.uHorizon.value.copy(hor);
     this.horizon.copy(hor);
@@ -163,29 +188,33 @@ export class Sky {
     u.uMoonPhase.value = s.moonPhase;
     u.uNight.value = this.night;
     u.uTime.value = time;
-    u.uCloudLit.value.copy(hor).lerp(c(1, 1, 1), day * 0.75).lerp(SET_H, twilight * 0.4);
-    u.uCloudShade.value.copy(zen).lerp(c(0.55, 0.6, 0.66), day * 0.7).multiplyScalar(0.9);
+    u.uCloudLit.value.copy(hor).lerp(WHITE, day * 0.75 * (1 - cloud * 0.6)).lerp(SET_H, twilight * 0.4);
+    u.uCloudShade.value.copy(zen).lerp(CLOUD_DAY, day * 0.7).multiplyScalar(0.9 - cloud * 0.25);
     this.mesh.position.copy(camera.position);
 
     // แสงหลัก: กลางวันคือดวงอาทิตย์ กลางคืนคือดวงจันทร์
-    const sunI = 2.1 * smooth(-0.04, 0.14, sh);
+    // ครึ้มฝนแดดอ่อนลง เงาจาง
+    const sunI = 2.1 * smooth(-0.04, 0.14, sh) * (1 - 0.7 * cloud);
     const moonI = 0.32 * moonGlow * (1 - day);
     if (sunI >= moonI) {
       light.color.copy(this.sunColor);
       light.intensity = sunI;
       light.userData.dir = s.sun;
     } else {
-      light.color.setRGB(0.55, 0.66, 0.92);
+      light.color.copy(MOON_LIGHT);
       light.intensity = moonI;
       light.userData.dir = s.moon;
     }
-    hemi.color.copy(zen).lerp(c(0.8, 0.88, 0.95), day * 0.5);
+    hemi.color.copy(zen).lerp(HEMI_DAY, day * 0.5);
     hemi.groundColor.setRGB(0.22, 0.2, 0.14).multiplyScalar(0.15 + 0.85 * day);
     hemi.intensity = 0.05 + 0.3 * moonGlow * (1 - day) + 1.0 * day + 0.25 * twilight;
-    this.brightness = Math.min(1, day + moonGlow * 0.25);
+    hemi.intensity *= 1 - 0.3 * cloud;
+    this.brightness = Math.min(1, day * (1 - 0.35 * cloud) + moonGlow * 0.25);
 
     fog.color.copy(hor);
     // ฟ้าใสมองเห็นภูเขาไกล 1.5 กม. · หมอกเช้าหนาจนเห็นแค่ใกล้ ๆ
-    fog.density = (0.0011 + s.fog * 0.012) * this.fogScale;
+    // หมอกเช้าอยู่ในหุบ ขึ้นไปบนเขาอากาศใส มองลงไปเห็นแผ่นหมอกในหุบ (ValleyFog) · REFERENCES-R2 หัวข้อ 7
+    const high = smooth(60, 220, camera.position.y);
+    fog.density = (0.0011 + s.fog * 0.012 * (1 - 0.9 * high) + cloud * 0.0012 + rain * 0.0035) * this.fogScale;
   }
 }

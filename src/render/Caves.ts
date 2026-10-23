@@ -179,7 +179,11 @@ export class Caves {
   cutTerrain(mat: THREE.Material): void {
     const holes = this.holeUniform;
     const count = holes.value.length;
-    mat.onBeforeCompile = (sh) => {
+    // ต่อจากตัวแก้เดิมของวัสดุ (พื้นเปียกตอนฝน) ไม่ทับกัน
+    const prev = mat.onBeforeCompile;
+    const prevKey = mat.customProgramCacheKey();
+    mat.onBeforeCompile = (sh, r) => {
+      prev.call(mat, sh, r);
       sh.uniforms.uHoles = holes;
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vHoleWorld;')
@@ -196,7 +200,7 @@ export class Caves {
           }`,
         );
     };
-    mat.customProgramCacheKey = () => `cave-holes-${count}`;
+    mat.customProgramCacheKey = () => `${prevKey}-cave-holes-${count}`;
     mat.needsUpdate = true;
   }
 }
