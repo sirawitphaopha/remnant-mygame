@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { CircleColliders } from '../world/colliders';
 import type { Prop } from '../world/props';
 import { flattenStatic } from './models/build';
+import { applyDetail } from './detail';
 import { busModel, carModel, lampModel, mailboxModel, shipModel, signModel, smallItemModel } from './models/props';
 
 export interface PlacedProp {
@@ -39,7 +40,11 @@ function ageMetal(obj: THREE.Object3D): void {
       const c = (mat as THREE.MeshLambertMaterial).color;
       if (!c) continue;
       if ((mat as THREE.MeshLambertMaterial).map) c.multiplyScalar(0.6);
-      else c.lerp(RUST, 0.72);
+      else {
+        c.lerp(RUST, 0.72);
+        // ลายสนิมด่างกับผิวพอง
+        applyDetail(mat, 'rust');
+      }
     }
   });
   for (const g of glass) g.removeFromParent();

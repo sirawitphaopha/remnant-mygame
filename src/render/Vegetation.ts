@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import type { QualityPreset } from '../config/quality';
 import { hash2 } from '../world/noise';
-import { DEBRIS_KINDS, PLANT_KINDS, scatterDebris, scatterPlants, scatterRocks, scatterTrees, type DebrisKind, type PlantKind, type Placed, type TreeSet } from '../world/scatter';
+import { DEBRIS_KINDS, PLANT_KINDS, scatterDebris, scatterPlants, scatterTrees, type DebrisKind, type PlantKind, type Placed, type TreeSet } from '../world/scatter';
+import { ROCK_TYPES, scatterRocks } from '../world/rocks';
+import { rockModel } from './models/rocks';
+import { applyDetail } from './detail';
 import type { Terrain } from '../world/Terrain';
 import { assemble, jitter, type Part } from './models/build';
-import { plantGeometry, rockGeometry } from './models/plants';
+import { plantGeometry } from './models/plants';
 import { shrubModel } from './models/shrubs';
 import { SHRUB_IDS } from '../world/shrubs';
 import { leafTexture, treeModel, type LeafStyle, type TreeLod } from './models/trees';
@@ -85,6 +88,8 @@ export class Vegetation {
     // วัสดุ: ลำต้น · แผ่นใบแต่ละลาย (เงาไหวตามใบ) · รูปทึบระดับไกล
     const barkMat = new THREE.MeshLambertMaterial({ vertexColors: true });
     addWind(barkMat, 0.25, 0, false, 3.2);
+    // ลายเปลือกไม้เป็นร่องตามแนวตั้งกับผิวนูน (ใส่หลังลม ลมยังทำงาน)
+    applyDetail(barkMat, 'bark');
     const solidMat = new THREE.MeshLambertMaterial({ vertexColors: true });
     addWind(solidMat, 0.3, 0);
     const distantMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -132,11 +137,13 @@ export class Vegetation {
       this.layers.set(set.kind, per);
     }
 
-    const rockMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-    const perVariant = Math.ceil(this.rocks.length / 3);
-    for (let v = 0; v < 3; v++) {
-      const items = this.rocks.filter((_, i) => i % 3 === v);
-      const mesh = new THREE.InstancedMesh(rockGeometry(v), rockMat, perVariant);
+    // หิน 6 ชนิด ชนิดละ 2 แบบ ตามรูปจริง (world/rocks.ts) · ลายเนื้อหินกับผิวนูน
+    const rockMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    applyDetail(rockMat, 'stone');
+    for (let v = 0; v < ROCK_TYPES.length * 2; v++) {
+      const items = this.rocks.filter((r) => (r.variant ?? 0) === v);
+      if (!items.length) continue;
+      const mesh = new THREE.InstancedMesh(rockModel(ROCK_TYPES[v >> 1], v & 1), rockMat, items.length);
       mesh.count = 0;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -146,6 +153,7 @@ export class Vegetation {
     }
 
     const debrisMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    applyDetail(debrisMat, 'bark');
     for (const kind of DEBRIS_KINDS) {
       const mesh = new THREE.InstancedMesh(debrisGeometry(kind), debrisMat, Math.max(1, this.debris[kind].length));
       mesh.count = 0;
@@ -234,7 +242,7 @@ export class Vegetation {
       const rockR2 = Math.min(this.q.terrainNear * 0.75, 200) ** 2;
       for (const r of this.rockMeshes) {
         let n = 0;
-        for (const p of r.items) if ((p.x - x) ** 2 + (p.z - z) ** 2 < rockR2) setInstance(r.mesh, n++, p, 0.3);
+        for (const p of r.items) if ((p.x - x) ** 2 + (p.z - z) ** 2 < rockR2) setInstance(r.mesh, n++, p, 0.04);
         r.mesh.count = n;
         r.mesh.instanceMatrix.needsUpdate = true;
       }

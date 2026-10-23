@@ -6,6 +6,7 @@ import type { TownBox } from '../world/townPlan';
 import { assemble, jitter, type Part } from './models/build';
 import { cardsGeometry, leafTexture, type Card } from './models/trees';
 import { addWind } from './wind';
+import { applyDetail } from './detail';
 
 // เมืองเก่าหลังมนุษย์หายไปราวพันปี (รอบสอง ช่วง 8 และ 9) · กล่องชุดเดียวกับตัวชน (world/townPlan.ts) ภาพกับตัวชนจึงตรงกันเสมอ
 // ภายนอก (ผนัง หลังคาที่ยังเหลือ ซากปูน มอส) รวมเป็นก้อนละ 128 ม. วาดไม่กี่ครั้งทั้งเมือง
@@ -201,6 +202,10 @@ export class Town {
   constructor(buildings: Building[], parts: Map<string, TownBox[]>, bridge: BridgePart[], extras: TownExtra[] = []) {
     const r = rng(9091);
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // ปูนฉาบเก่าพันปี คราบน้ำไหล ปูนกะเทาะ รอยร้าว · กองซากเป็นเนื้อหิน
+    applyDetail(mat, 'plaster');
+    const moundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    applyDetail(moundMat, 'stone');
     const glassMat = new THREE.MeshLambertMaterial({ color: 0x2a3634, transparent: true, opacity: 0.45 });
     const ivyMap = leafTexture('broad');
     const ivyMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: ivyMap, alphaTest: 0.45, side: THREE.DoubleSide });
@@ -290,7 +295,7 @@ export class Town {
         this.add(gm, ch.cx, ch.cz);
       }
       if (ch.mounds.length) {
-        const mm = new THREE.Mesh(assemble(ch.mounds), mat);
+        const mm = new THREE.Mesh(assemble(ch.mounds), moundMat);
         mm.position.set(ch.cx, 0, ch.cz);
         mm.castShadow = mm.receiveShadow = true;
         this.add(mm, ch.cx, ch.cz, DETAIL_FAR);
@@ -317,7 +322,9 @@ export class Town {
 
     // สะพาน
     const concrete = new THREE.MeshLambertMaterial({ color: 0x7a776e });
+    applyDetail(concrete, 'stone');
     const rust = new THREE.MeshLambertMaterial({ color: 0x4e3424 });
+    applyDetail(rust, 'rust');
     for (const p of bridge) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(p.hx * 2, p.y1 - p.y0, p.hz * 2), p.kind === 'rail' ? rust : concrete);
       mesh.position.set(p.x, (p.y0 + p.y1) / 2, p.z);

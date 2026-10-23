@@ -114,7 +114,7 @@ describe('เข้าตึกได้ทุกหลัง', () => {
       }
       expect(inside / cells, `${b.key} ${b.type}`).toBeGreaterThan(0.85);
     }
-  });
+  }, 30000); // เดินทุกหลังในเมือง ราว 2 ถึง 6 วินาทีตามเครื่อง
   it('ขึ้นบันไดถึงชั้นบนสุดได้ทุกหลังที่มีหลายชั้น', () => {
     for (const b of sample.filter((x) => x.floors > 1)) {
       const { topFeet } = walk(b);

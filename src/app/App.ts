@@ -41,6 +41,8 @@ import { BodyFx, DeathScreen } from '../ui/BodyFx';
 import { remainsModel } from '../render/models/hero';
 import { Structures } from '../world/structures';
 import { buildCaves, caveAt, type Cave } from '../world/caves';
+import { ROCK_SHAPE, rockTypeOf } from '../world/rocks';
+import { applyDetail } from '../render/detail';
 import { buildTown, buildingAt, grassBlocked, treeBlocked, type Building, type TownLayout } from '../world/town';
 import { Town } from '../render/Town';
 import { Fish } from '../render/Fish';
@@ -259,7 +261,11 @@ export class App {
     for (const set of this.vegetation.trees) {
       for (const t of set.items) this.colliders.add({ x: t.x, z: t.z, r: trunkRadius(set.kind, t.scale * 10), top: t.scale * 10 });
     }
-    for (const r of this.vegetation.rocks) this.colliders.add({ x: r.x, z: r.z, r: 1.05 * r.scale, top: 0.75 * r.scale, stand: true, y0: r.y });
+    // หินแต่ละชนิดชนตามขนาดของโมเดลชนิดนั้น (world/rocks.ts ROCK_SHAPE)
+    for (const r of this.vegetation.rocks) {
+      const sh = ROCK_SHAPE[rockTypeOf(r.variant)];
+      this.colliders.add({ x: r.x, z: r.z, r: sh.r * r.scale, top: sh.top * r.scale, stand: true, y0: r.y });
+    }
     // ขอนไม้ล้ม (วงกลมเรียงตามท่อน) ตอไม้ ต้นล้มทั้งราก · ยืนบนได้ กระโดดข้ามได้
     for (const kind of ['log', 'stump', 'uprooted'] as const) {
       for (const d of this.vegetation.debris[kind]) {
@@ -281,6 +287,8 @@ export class App {
     this.cavesView = new Caves(this.caves);
     this.scene.add(this.cavesView.group);
     this.cavesView.cutTerrain(this.terrainMesh.material);
+    // ลายดินกับผิวนูนบนพื้น (ใส่หลังตัวตัดถ้ำกับพื้นเปียก ทั้งสองยังทำงาน)
+    applyDetail(this.terrainMesh.material, 'soil');
     this.worldGround = new WorldGround(this.terrain, this.structures, this.caves, this.colliders);
     this.gasAt = (x, y, z) => {
       const c = caveAt(this.caves, x, z);

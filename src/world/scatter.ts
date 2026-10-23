@@ -176,26 +176,7 @@ export function scatterDebris(t: Terrain, blocked: (x: number, z: number) => boo
   return out;
 }
 
-/** ก้อนหินทั้งแมพ · มากบนเนินชันกับภูเขา */
-export function scatterRocks(t: Terrain): Placed[] {
-  const cell = 13;
-  const out: Placed[] = [];
-  const n = Math.floor(WORLD.size / cell);
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const x = -WORLD.half + (i + hash2(i, j, 11)) * cell;
-      const z = -WORLD.half + (j + hash2(i, j, 12)) * cell;
-      const slope = t.slopeAt(x, z);
-      const b = t.biomeAt(x, z);
-      if (b === BIOME.snow || b === BIOME.town) continue;
-      const chance = 0.08 + slope * 0.9 + smooth(60, 300, t.heightAt(x, z)) * 0.15 + (b === BIOME.rock ? 0.25 : 0);
-      if (hash2(i, j, 13) > chance) continue;
-      if (!canPlace(t, x, z, 0.75, 2)) continue;
-      out.push({ x, y: t.heightAt(x, z), z, rot: hash2(i, j, 14) * Math.PI * 2, scale: 0.5 + 2.2 * Math.pow(hash2(i, j, 15), 2) });
-    }
-  }
-  return out;
-}
+/** หินย้ายไปอยู่ที่ world/rocks.ts (รอบสอง: หิน 6 ชนิดตามรูปจริง) */
 
 export type PlantKind = 'fern' | 'flower' | 'bush' | 'mushroom' | 'moss';
 export const PLANT_KINDS: PlantKind[] = ['fern', 'flower', 'bush', 'mushroom', 'moss'];
