@@ -35,6 +35,8 @@ export interface ToolsHost {
   onInk(x: number, y: number, z: number): void;
   /** แดดส่องถึงตัวไหม (ชาร์จไฟฉาย) */
   sunlit(): boolean;
+  /** เล่นเสียงอุปกรณ์ */
+  sound?(name: 'ink' | 'glue' | 'click'): void;
 }
 
 interface Blob { mesh: THREE.Mesh; vel: THREE.Vector3; life: number }
@@ -85,7 +87,7 @@ export class Tools {
         case 'flashlight':
           if (isPressed) {
             if (!s.on && (s.charge ?? 0) <= 0.01) this.host.toast(t('lightEmpty'), 'warn');
-            else s.on = !s.on;
+            else { s.on = !s.on; this.host.sound?.('click'); }
           }
           break;
         case 'inkGun':
@@ -97,7 +99,7 @@ export class Tools {
         case 'glueGun':
           if (isPressed) {
             if ((s.amount ?? 0) <= 0) this.host.toast(t('noGlue'), 'warn');
-            else if (this.host.sealCrack()) { s.amount = (s.amount ?? 0) - 1; this.host.toast(t('sealed')); }
+            else if (this.host.sealCrack()) { s.amount = (s.amount ?? 0) - 1; this.host.toast(t('sealed')); this.host.sound?.('glue'); }
             else this.host.toast(t('noCracks'));
           }
           break;
@@ -151,6 +153,7 @@ export class Tools {
     }
     s.amount = (s.amount ?? 0) - 1;
     this.fireCooldown[arm] = 0.35;
+    this.host.sound?.('ink');
     const mesh = inkBlob();
     const hand = this.host.hero.hands[arm];
     hand.getWorldPosition(mesh.position);

@@ -43,6 +43,9 @@ import { Town } from '../render/Town';
 import { Caves } from '../render/Caves';
 import { WorldGround } from './WorldGround';
 import { Animals } from './Animals';
+import { NatureAudio, type Surface } from '../audio/NatureAudio';
+import { forestDensity } from '../world/scatter';
+import { LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from '../world/layout';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
 export class App {
@@ -91,6 +94,8 @@ export class App {
   readonly cavesView: Caves;
   readonly worldGround: WorldGround;
   readonly animals: Animals;
+  readonly audio = new NatureAudio();
+  private lastStep = 0;
   /** อยู่ลึกในถ้ำแค่ไหน 0 = ข้างนอก 1 = ปลายถ้ำ (หรี่แสงแดดกับแสงฟ้า) */
   caveDepth = 0;
   readonly bodyFx: BodyFx;
@@ -190,6 +195,7 @@ export class App {
       if (this.elapsed - lastHit < 1.5) return;
       lastHit = this.elapsed;
       this.body.hit();
+      this.audio.hurt();
       if (!this.body.dead) this.hud.toast(`${t('attacked')} · ${t('sealWithGlue')}`, 'danger');
     };
     this.player = new Player(this.worldGround, this.colliders);
@@ -230,7 +236,13 @@ export class App {
       refillOxygen: () => this.body.refill(),
       onInk: (x, y, z) => { this.animals.ink(x, y, z); },
       sunlit: () => this.skyState.sunHeight > 0.05,
+      sound: (n) => (n === 'ink' ? this.audio.inkShot() : n === 'glue' ? this.audio.glue() : this.audio.click()),
     });
+
+    // เปิดเสียงหลังคนกดปุ่มหรือคลิกครั้งแรก (กฎเบราว์เซอร์)
+    const wake = () => this.audio.start();
+    window.addEventListener('pointerdown', wake);
+    window.addEventListener('keydown', wake);
 
     this.setQuality(DEFAULT_QUALITY);
     window.addEventListener('resize', () => this.resize());
@@ -292,6 +304,36 @@ export class App {
   setClock(hour: number, day = Math.floor(this.gameTime / DAY_SECONDS)): void {
     this.gameTime = (day + hour / 24) * DAY_SECONDS;
     this.advance(0.05);
+  }
+
+  /** เสียงธรรมชาติตามที่อยู่ เวลา และฝีเท้า */
+  private updateAudio(dt: number): void {
+    const p = this.player;
+    const waterDist = Math.min(distToPolyline(p.x, p.z, RIVER) - RIVER_WIDTH, Math.hypot(p.x - LAKE.x, p.z - LAKE.z) - LAKE.radius);
+    const gust = 0.5 + 0.5 * Math.sin(this.elapsed * 0.35 + p.x * 0.013 + p.z * 0.009);
+    this.audio.update(dt, {
+      night: this.sky.night,
+      forest: forestDensity(this.terrain, p.x, p.z),
+      waterDist: Math.max(0, waterDist),
+      cave: this.caveDepth,
+      underwater: p.underwater,
+      town: Math.max(0, 1 - Math.hypot(p.x - TOWN.x, p.z - TOWN.z) / (TOWN.radius * 1.3)),
+      altitude: Math.max(0, p.y - 10),
+      gust,
+    });
+    // ฝีเท้า: ทุกครึ่งรอบจังหวะก้าว
+    const step = Math.floor(p.stepPhase / Math.PI);
+    if (step !== this.lastStep) {
+      this.lastStep = step;
+      if (p.state === 'ground' && p.speed > 0.4) {
+        let surface: Surface = 'grass';
+        if (this.terrain.heightAt(p.x, p.z) < 2.1) surface = 'water';
+        else if (this.caveDepth > 0.05) surface = 'cave';
+        else if (p.y > this.terrain.heightAt(p.x, p.z) + 0.5) surface = 'rock';
+        else if (distToPolyline(p.x, p.z, ROAD) < ROAD_WIDTH) surface = 'road';
+        this.audio.step(surface, p.running);
+      }
+    }
   }
 
   /** พื้นที่กล้องใช้กันจม · อยู่ในถ้ำใช้พื้นถ้ำ */
@@ -383,6 +425,7 @@ export class App {
   /** สแกนเสร็จ (ช่วง 6 ทำข้อความสแกน 3 ชั้น) */
   onScanned(target: ScanTarget): void {
     const r = this.scanLog.scan(target.kind, target.key, target.special);
+    this.audio.scanDone();
     this.scanCard.show(target.kind, this.scanLog, r.firstTime || r.newTruth || r.newLog, this.elapsed);
     const k = kindOf(target.kind);
     this.hud.toast(`${t('scanSent')}<br><b>${k ? shownName(k, this.scanLog.truth(target.kind)) : target.kind}</b>`);
@@ -659,6 +702,7 @@ export class App {
     this.hemi.intensity *= dim;
     this.cavesView.update(this.elapsed);
     this.animals.update(dt, p.x, p.y, p.z, this.sky.night > 0.5, this.elapsed);
+    this.updateAudio(dt);
     // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
     const snap = 4;
     const sx = Math.round(p.x / snap) * snap;
