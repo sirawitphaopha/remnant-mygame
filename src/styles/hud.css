@@ -1,0 +1,106 @@
+/* ส่วนบนจอระหว่างเล่น · เรียบ โปร่ง ไม่บังวิว · ยกหน้าตาจากมอคอัปหน้า 2 และ 3 */
+
+.hud { position: fixed; inset: 0; pointer-events: none; font-family: var(--font-ui); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+.hud .num { font-family: var(--font-num); }
+
+/* เข็มทิศ */
+.compass {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  width: min(440px, 40vw); height: 30px; overflow: hidden;
+  border-top: 1px solid rgba(255,255,255,.35); border-bottom: 1px solid rgba(255,255,255,.12);
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,.22) 20%, rgba(0,0,0,.22) 80%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+}
+.compass .mark { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 13px; white-space: nowrap; opacity: .9; }
+.compass .mark.n { color: var(--holo); font-weight: 600; font-size: 15px; }
+.compass .mark.tick { opacity: .4; font-size: 11px; }
+.compass-pointer { position: absolute; top: 47px; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-bottom-color: var(--holo); border-top: 0; }
+
+/* มินิแมพ */
+.minimap { position: absolute; top: 18px; right: 22px; width: 168px; height: 168px; border-radius: 50%; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.35); background: rgba(5,12,12,.55); box-shadow: 0 0 0 4px rgba(0,0,0,.22); }
+.minimap canvas { width: 100%; height: 100%; display: block; }
+.minimap-hint { position: absolute; top: 192px; right: 22px; width: 168px; text-align: center; font-size: 12px; color: rgba(255,255,255,.72); }
+
+/* แถบแรง ออกซิเจน แบต */
+.bars { position: absolute; left: 24px; bottom: 26px; display: grid; gap: 9px; width: 230px; }
+.bar { display: grid; grid-template-columns: 76px 1fr; align-items: center; gap: 9px; font-size: 13px; }
+.bar .track { height: 7px; background: rgba(255,255,255,.15); border-radius: 8px; overflow: hidden; }
+.bar .fill { height: 100%; border-radius: 8px; background: #f3f6f0; width: 100%; }
+.bar.o2 .fill { background: #7fd7ff; }
+.bar.bat .fill { background: #ffe07a; }
+.bar.low .fill { background: var(--warn); }
+.bar.critical .fill { background: var(--danger); }
+.bar[hidden] { display: none; }
+
+/* ช่องแขน 4 ช่อง + แถบล่าง 9 ช่อง */
+.belt { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: grid; justify-items: center; gap: 10px; }
+.arms { display: flex; gap: 8px; }
+.arm { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 7px; min-width: 128px;
+  padding: 6px 9px; border-radius: 5px; background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.16); font-size: 12px; }
+.arm kbd { font-family: inherit; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,.88); color: #102020; white-space: nowrap; text-shadow: none; }
+.arm .what { line-height: 1.25; }
+.arm .what small { display: block; color: rgba(255,255,255,.6); font-size: 10.5px; }
+.arm.main { border-color: var(--holo); box-shadow: 0 0 10px rgba(111,240,224,.22); }
+.arm.active { border-color: #ffe07a; }
+.arm.empty .what { color: rgba(255,255,255,.45); }
+
+.hotbar { display: flex; gap: 5px; }
+.slot { position: relative; width: 56px; height: 56px; border-radius: 5px; background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.18);
+  display: grid; place-items: center; color: #e9f4f2; }
+.slot svg { width: 28px; height: 28px; }
+.slot .n { position: absolute; top: 2px; left: 5px; font-size: 10px; color: rgba(255,255,255,.75); font-family: var(--font-num); }
+.slot .label { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-size: 10.5px; color: rgba(255,255,255,.8); white-space: nowrap; }
+.slot .count { position: absolute; bottom: 2px; right: 4px; font-size: 10px; font-family: var(--font-num); color: rgba(255,255,255,.85); }
+.slot.inarm { border-color: var(--holo); }
+.slot.inarm::after { content: ""; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--holo); }
+.slot.empty { opacity: .5; }
+.belt-hint { font-size: 11px; color: rgba(255,255,255,.62); margin-top: 14px; }
+
+/* ข้อความสั้นมุมซ้ายบน */
+.toasts { position: absolute; left: 24px; top: 20px; display: grid; gap: 6px; font-size: 13px; max-width: 360px; }
+.toast { padding: 5px 9px; border-radius: 4px; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.16); }
+.toast b { color: var(--holo); font-weight: 600; }
+.toast.warn { border-color: rgba(255,179,92,.6); }
+.toast.danger { border-color: rgba(255,90,90,.6); }
+
+/* ป้ายกดปุ่มกลางจอ */
+.prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; font-size: 14px;
+  padding: 6px 11px; background: rgba(0,0,0,.5); border-radius: 5px; border: 1px solid rgba(255,255,255,.2); }
+.prompt kbd { font-family: inherit; font-weight: 600; font-size: 12px; padding: 1px 7px; border-radius: 3px; background: #fff; color: #102020; text-shadow: none; }
+.prompt[hidden] { display: none; }
+
+/* เป้าเล็งกลางจอ (โผล่ตอนสแกนหรือเล็ง) */
+.reticle { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; transform: translate(-50%, -50%);
+  border: 1px dashed var(--holo); border-radius: 50%; opacity: .9; }
+.reticle[hidden] { display: none; }
+
+/* ===== หน้าโฮโลแกรม (แผนที่ กระเป๋า ยาน ตั้งค่า) ===== */
+.overlay { position: fixed; inset: 0; background: rgba(2,10,12,.72); backdrop-filter: blur(3px); pointer-events: auto; display: grid; place-items: center; font-family: var(--font-ui); color: var(--ink); }
+.overlay[hidden] { display: none; }
+.holo { position: relative; width: min(1240px, 94vw); height: min(720px, 90vh); border-radius: 10px; border: 1px solid var(--holo-line);
+  background: repeating-linear-gradient(0deg, rgba(111,240,224,.035) 0 1px, transparent 1px 4px), linear-gradient(160deg, rgba(10,40,42,.82), rgba(4,18,22,.88));
+  box-shadow: inset 0 0 50px rgba(111,240,224,.06), 0 0 40px rgba(111,240,224,.1); padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; }
+.holo-head { display: flex; align-items: center; gap: 16px; }
+.holo-head h2 { margin: 0; font-size: 24px; font-weight: 600; color: var(--holo); letter-spacing: .04em; }
+.holo-head .sub { color: var(--ink-dim); font-size: 13px; }
+.holo-head .spacer { flex: 1; }
+.panel { border: 1px solid rgba(111,240,224,.22); border-radius: 6px; padding: 14px 16px; background: rgba(0,0,0,.18); min-height: 0; }
+.panel h4 { margin: 0 0 10px; font-size: 13px; font-weight: 500; color: var(--holo-dim); letter-spacing: .05em; }
+
+.btn { font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 5px; padding: 8px 18px; min-width: 110px; color: var(--ink);
+  background: rgba(111,240,224,.08); border: 1px solid var(--holo-line); transition: background .15s, border-color .15s, color .15s; }
+.btn:hover { background: rgba(111,240,224,.2); border-color: var(--holo); }
+.btn:focus-visible { outline: 2px solid var(--holo); outline-offset: 2px; }
+.btn.primary { background: var(--holo); color: #062220; border-color: var(--holo); font-weight: 600; }
+.btn.primary:hover { background: #a2fff2; border-color: #a2fff2; }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.btn kbd { font-family: inherit; font-size: 11px; opacity: .75; margin-left: 6px; }
+
+.bigmap { display: grid; grid-template-columns: 1fr 260px; grid-template-rows: minmax(0, 1fr); gap: 18px; flex: 1; min-height: 0; }
+.bigmap .panel.map { padding: 0; overflow: hidden; position: relative; display: grid; place-items: center; background: #050b0c; }
+.bigmap canvas { position: absolute; inset: 0; margin: auto; height: 100%; width: auto; max-width: 100%; aspect-ratio: 1 / 1; }
+.legend-list { display: grid; grid-template-columns: 22px 1fr; gap: 8px 10px; font-size: 13px; align-items: center; }
+.legend-list i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.map-note { font-size: 12px; line-height: 1.7; color: var(--ink-dim); margin: 16px 0 0; }

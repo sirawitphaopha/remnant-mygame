@@ -14,6 +14,13 @@ import { Vegetation } from '../render/Vegetation';
 import { Water } from '../render/Water';
 import { WIND } from '../render/wind';
 import { Input } from './Input';
+import { ExploreMap } from '../core/explore';
+import { findGear, holding, equipToArm, starterPack, type Loadout } from '../core/gear';
+import { SHIP } from '../world/layout';
+import { Hud, type MapMarker } from '../ui/Hud';
+import { BigMap } from '../ui/BigMap';
+import { MapImage } from '../ui/MapImage';
+import { armViews, beltViews } from './hudView';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
 export class App {
@@ -41,8 +48,12 @@ export class App {
   private q: QualityPreset = QUALITY[DEFAULT_QUALITY];
   readonly hero = new HeroModel();
   readonly colliders = new CircleColliders();
-  /** ถือที่ปีนป่ายอยู่ไหม (ช่วง 5 ผูกกับอุปกรณ์จริง) */
-  climbGear = true;
+  /** ของที่พกอยู่ แถบล่าง 9 ช่อง และแขน 4 ข้าง */
+  loadout: Loadout = starterPack();
+  readonly explore = new ExploreMap();
+  readonly mapImage: MapImage;
+  readonly hud: Hud;
+  readonly bigMap: BigMap;
   /** กำลังเล็งหรือสแกน (กล้องซูมชิดไหล่) */
   aiming = false;
   /** น้ำหนักที่แบก ÷ ที่รับได้ (ช่วง 6 ผูกกับกระเป๋า) */
@@ -106,6 +117,11 @@ export class App {
     this.player.place(SPAWN_POINT.x, SPAWN_POINT.z, SPAWN_POINT.heading);
     this.rig = new CameraRig(this.camera);
     this.rig.snap(this.player);
+
+    this.mapImage = new MapImage(this.terrain);
+    this.hud = new Hud(uiRoot, this.mapImage, this.explore);
+    this.bigMap = new BigMap(uiRoot, this.mapImage, this.explore);
+    this.bigMap.onClose = () => this.toggleMap(false);
 
     this.setQuality(DEFAULT_QUALITY);
     window.addEventListener('resize', () => this.resize());
@@ -182,9 +198,31 @@ export class App {
     this.renderMs = performance.now() - t;
   }
 
+  /** เครื่องหมายบนแผนที่ (ช่วง 6 และ 7 เพิ่มซาก กระเป๋า) */
+  markers(): MapMarker[] {
+    return [{ kind: 'ship', x: SHIP.x, z: SHIP.z }];
+  }
+
+  toggleMap(open = !this.bigMap.open): void {
+    if (open) {
+      this.bigMap.show(this.player.x, this.player.z, this.player.heading, this.markers());
+      this.input.unlock();
+    } else {
+      this.bigMap.hide();
+    }
+  }
+
   private update(dt: number): void {
     this.elapsed += dt;
     this.input.setTime(this.elapsed);
+    if (this.input.wasPressed('KeyM')) this.toggleMap();
+    if (this.bigMap.open) {
+      // เปิดแผนที่อยู่ เกมหยุดเดินเวลา
+      if (this.input.wasPressed('Escape')) this.toggleMap(false);
+      this.input.endFrame();
+      return;
+    }
+    for (let i = 0; i < 9; i++) if (this.input.wasPressed(`Digit${i + 1}`)) equipToArm(this.loadout, i);
     WIND.uTime.value = this.elapsed;
     this.water.update(dt);
     this.gameTime += dt * this.timeScale;
@@ -205,7 +243,7 @@ export class App {
       z: mz,
       run: inp.isDown('ShiftLeft') || inp.isDown('ShiftRight'),
       jump: inp.wasPressed('Space'),
-      climbGear: this.climbGear,
+      climbGear: holding(this.loadout, 'climber') !== null,
       loadRatio: this.loadRatio,
     });
     if (inp.wasPressed('KeyV')) this.rig.swapShoulder();
@@ -219,6 +257,8 @@ export class App {
     this.vegetation.update(p.x, p.z);
     this.grass.update(p.x, p.z);
 
+    this.explore.reveal(p.x, p.z);
+    this.updateHud();
     this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog);
     // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
     const snap = 4;
@@ -233,6 +273,27 @@ export class App {
     wu.uSkyColor.value.copy(this.sky.horizon);
     wu.uLight.value = 0.04 + 0.96 * this.sky.brightness;
     inp.endFrame();
+  }
+
+  private updateHud(): void {
+    const p = this.player;
+    const light = findGear(this.loadout, 'flashlight');
+    const name = (id: string) => id;
+    this.hud.update({
+      yaw: this.rig.yaw,
+      x: p.x,
+      z: p.z,
+      heading: p.heading,
+      stamina: p.stamina.value / 100,
+      exhausted: p.stamina.exhausted,
+      oxygen: null,
+      battery: light && light.on ? light.charge ?? 0 : null,
+      arms: armViews(this.loadout, name),
+      belt: beltViews(this.loadout, name),
+      markers: this.markers(),
+      prompt: null,
+      reticle: this.aiming,
+    }, this.elapsed);
   }
 
   private measureFps(dt: number): void {

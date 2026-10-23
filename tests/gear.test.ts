@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { equipToArm, held, holding, slotKg, starterPack } from '../src/core/gear';
+
+describe('อุปกรณ์และ 4 แขน', () => {
+  it('แพ็กเกจเริ่มต้นมีครบ 7 อย่าง ถือ 4 อย่างไว้ในแขน', () => {
+    const l = starterPack();
+    expect(l.belt.filter(Boolean)).toHaveLength(7);
+    expect(l.arms).toEqual([0, 1, 2, 3]);
+    expect(holding(l, 'scanner')).not.toBeNull();
+    expect(holding(l, 'climber')).toBeNull();
+  });
+  it('กดเลขเอาของเข้าแขนหลัก ถ้าแขนอื่นถืออยู่ให้สลับกัน', () => {
+    const l = starterPack();
+    equipToArm(l, 4);
+    expect(l.arms[0]).toBe(4);
+    expect(holding(l, 'climber')).not.toBeNull();
+    equipToArm(l, 1);
+    expect(l.arms[0]).toBe(1);
+    expect(l.arms[1]).toBe(4);
+  });
+  it('กดเลขช่องว่างไม่มีผล', () => {
+    const l = starterPack();
+    equipToArm(l, 8);
+    expect(l.arms).toEqual([0, 1, 2, 3]);
+  });
+  it('อุปกรณ์ทุกชิ้นมีน้ำหนัก แพ็กเริ่มต้นราว 9 กก.', () => {
+    const l = starterPack();
+    const kg = l.belt.reduce((s, x) => s + slotKg(x), 0);
+    expect(kg).toBeGreaterThan(8.5);
+    expect(kg).toBeLessThan(10);
+    expect(held(l, 0)).toMatchObject({ id: 'scanner' });
+  });
+});
