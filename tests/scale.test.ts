@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { HERO, STREET } from '../src/config/scale';
+import { ANIMAL_SHOULDER, HERO, STREET } from '../src/config/scale';
+import { animalModel } from '../src/render/models/animals';
 import { HeroModel } from '../src/render/models/hero';
 import { busModel, carModel, lampModel, mailboxModel } from '../src/render/models/props';
 
@@ -35,5 +36,15 @@ describe('ขนาดของจริง', () => {
     expect(Math.abs(bus.y - STREET.bus.height)).toBeLessThan(0.08);
     expect(Math.abs(size(lampModel()).y - STREET.lampHeight)).toBeLessThan(0.1);
     expect(Math.abs(size(mailboxModel()).y - STREET.mailboxHeight)).toBeLessThan(0.05);
+  });
+  it('สัตว์สี่ขาสูงถึงไหล่ตามของจริง (รอบสอง ช่วง 12)', () => {
+    for (const [id, shoulder] of Object.entries(ANIMAL_SHOULDER)) {
+      const a = animalModel(id);
+      a.animate(0.016, 0, 0, 'alert');
+      a.root.updateMatrixWorld(true);
+      const body = a.root.getObjectByName('body')!;
+      const top = new THREE.Box3().setFromObject(body).max.y;
+      expect(Math.abs(top - shoulder), id).toBeLessThan(0.03);
+    }
   });
 });

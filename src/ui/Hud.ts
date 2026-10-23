@@ -146,6 +146,11 @@ export class Hud {
     this.now = now;
   }
 
+  /** ขอบล่างของกองข้อความสั้นมุมซ้ายบน (พิกเซลจากบนจอ) · การ์ดสแกนวางต่อใต้กองนี้ ไม่ทับกัน (รายงานตรวจข้อ 40) */
+  toastBottom(): number {
+    return this.toasts.length ? this.toastBox.getBoundingClientRect().bottom : 0;
+  }
+
   /** ข้อความสั้นมุมซ้ายบน หายเองตามเวลา */
   toast(html: string, kind: '' | 'warn' | 'danger' = '', seconds = 4): void {
     const e = el('div', 'toast ' + kind, this.toastBox);

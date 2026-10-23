@@ -129,10 +129,21 @@
 button.gslot { cursor: pointer; }
 button.gslot:hover { background: rgba(111,240,224,.14); border-color: var(--holo); }
 .gslot svg { width: 34%; height: 34%; margin-top: -14%; }
-.gslot .gname { position: absolute; left: 4px; right: 4px; bottom: 16px; font-size: 11px; line-height: 1.2; text-align: center; color: var(--ink); }
+/* ช่องที่มีชื่อ (ของในกระเป๋า กระเป๋าซ้อน) ชื่อมีที่ของตัวเองใต้ไอคอน ไม่ทับไอคอน (รายงานตรวจข้อ 40)
+   น้ำหนักขึ้นไปมุมขวาบนคู่กับป้าย ช่องจึงมีที่ให้ชื่อสองบรรทัด · ยาวกว่านั้นตัดด้วย … ชื่อเต็มอยู่ช่องรายละเอียดข้างขวา
+   line-height 1.3 เท่าความสูงฟอนต์ Sarabun สระบนกับวรรณยุกต์จึงไม่โดนตัดตอนซ่อนบรรทัดที่สาม */
+.gslot:has(.gname) { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 15px 3px 0; }
+.gslot:has(.gname) svg { flex: none; width: 28%; height: auto; aspect-ratio: 1; margin: 0; }
+.gslot:has(.gname) .kg { top: 3px; bottom: auto; }
+.gslot .gname { flex: none; width: 100%; margin-top: 1px; padding: 2px 0 1px; font-size: 11px; line-height: 1.3; text-align: center; color: var(--ink);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .gslot .kg { position: absolute; bottom: 3px; right: 5px; font-size: 10px; color: var(--ink-dim); font-family: var(--font-num); }
 .gslot .tag { position: absolute; top: 3px; left: 5px; font-size: 10px; color: var(--holo-dim); }
 .gslot.sel { border-color: #c7a5ff; background: rgba(199,165,255,.12); }
+/* ของที่เพิ่งเก็บ (ป้าย "ใหม่") ขอบม่วงตามมอคอัปหน้า 5 · ชี้แล้วอยู่ในโทนม่วงเดิม สว่างขึ้น */
+.gslot.new { border: 1px solid rgba(199,165,255,.7); }
+.gslot.new .tag { color: #c7a5ff; }
+button.gslot.new:hover { border: 1px solid #ddc8ff; background: rgba(199,165,255,.18); }
 button.gslot.sel:hover { border-color: #ddc8ff; background: rgba(199,165,255,.22); }
 .gslot.blank { border-style: dashed; opacity: .45; cursor: default; }
 .gslot.nested { border-color: rgba(199,165,255,.5); }

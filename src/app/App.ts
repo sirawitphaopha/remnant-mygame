@@ -41,7 +41,8 @@ import { BodyFx, DeathScreen } from '../ui/BodyFx';
 import { remainsModel } from '../render/models/hero';
 import { Structures } from '../world/structures';
 import { buildCaves, caveAt, insideTunnel, overCave, type Cave } from '../world/caves';
-import { ROCK_SHAPE, rockTypeOf } from '../world/rocks';
+import { ROCK_SCAN, ROCK_SHAPE, rockTypeOf } from '../world/rocks';
+import { SHRUB_IDS } from '../world/shrubs';
 import { planRuins } from '../world/ruins';
 import { applyDetail } from '../render/detail';
 import { buildTown, buildingAt, grassBlocked, treeBlocked, type Building, type TownLayout } from '../world/town';
@@ -58,12 +59,18 @@ const FLOW_N = 192;
 import { Caves } from '../render/Caves';
 import { WorldGround } from './WorldGround';
 import { disposeObject } from '../render/dispose';
-import { Animals } from './Animals';
+import { Animals, type AnimalFrame, type TreePoint } from './Animals';
+import { PointGrid } from '../world/pointGrid';
+import { Critters } from '../render/Critters';
+import { dayPart } from '../core/ecology';
+import { WildZones } from '../world/habitat';
+import { inSight } from '../world/lineOfSight';
+import type { Placed } from '../world/scatter';
 import { NatureAudio, type Surface } from '../audio/NatureAudio';
 import { clearSave, readOldSave, readSave, readSettings, storedSavedAt, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
 import { SettingsScreen, TitleScreen } from '../ui/Menus';
 import { forestDensity } from '../world/scatter';
-import { FLOWER_IDS, grassHeightAt } from '../world/flowers';
+import { grassHeightAt, plantScanKind } from '../world/flowers';
 import { scanKindOf, trunkRadius } from '../world/trees';
 import { LAKE, RIVER, RIVER_WIDTH, ROAD_WIDTH, TOWN, distToPolyline, distToRoads } from '../world/layout';
 
@@ -106,6 +113,11 @@ export class App {
   private q: QualityPreset = QUALITY[DEFAULT_QUALITY];
   readonly hero = new HeroModel();
   readonly colliders = new CircleColliders();
+  /** ต้นไม้กับหินในตารางช่อง หาของใกล้ตัวเร็ว (เป้าสแกน กระรอก หมี) */
+  readonly treeGrid = new PointGrid<TreePoint>(32);
+  readonly rockGrid = new PointGrid<Placed>(32);
+  private animalFrame: AnimalFrame = { dt: 0, px: 0, py: 0, pz: 0, reach: true, timeOfDay: 0.3, rain: 0, time: 0, fx: 0, fz: -1 };
+  private camDir = new THREE.Vector3();
   private camWorld: CameraWorld | null = null;
   private lastCull = -1;
   private townView!: Town;
@@ -132,6 +144,8 @@ export class App {
   readonly cavesView: Caves;
   readonly worldGround: WorldGround;
   readonly animals: Animals;
+  /** นกกิ้งโครงเป็นฝูง ผีเสื้อ ผึ้ง (รอบสอง ช่วง 12) */
+  readonly critters: Critters;
   readonly audio = new NatureAudio();
   settings: Settings = readSettings();
   readonly title: TitleScreen;
@@ -263,10 +277,14 @@ export class App {
     // ลำต้นไม้กับก้อนหินเป็นสิ่งกีดขวาง
     // ลำต้นชนตามขนาดจริงของแต่ละชนิด (scale = ความสูง ÷ 10)
     for (const set of this.vegetation.trees) {
-      for (const t of set.items) this.colliders.add({ x: t.x, z: t.z, r: trunkRadius(set.kind, t.scale * 10), top: t.scale * 10 });
+      for (const t of set.items) {
+        this.colliders.add({ x: t.x, z: t.z, r: trunkRadius(set.kind, t.scale * 10), top: t.scale * 10 });
+        this.treeGrid.add({ x: t.x, y: t.y, z: t.z, kind: set.kind, height: t.scale * 10 });
+      }
     }
     // หินแต่ละชนิดชนตามขนาดของโมเดลชนิดนั้น (world/rocks.ts ROCK_SHAPE)
     for (const r of this.vegetation.rocks) {
+      this.rockGrid.add(r);
       const sh = ROCK_SHAPE[rockTypeOf(r.variant)];
       this.colliders.add({ x: r.x, z: r.z, r: sh.r * r.scale, top: sh.top * r.scale, stand: true, y0: r.y });
     }
@@ -303,8 +321,11 @@ export class App {
       return !!c && c.f >= c.cave.gasFrom && y < c.floor + 4;
     };
     this.shelterAt = (x, y, z) => this.structures.roofOver(x, y, z) || (!!caveAt(this.caves, x, z) && y < this.terrain.heightAt(x, z) - 2);
-    this.animals = new Animals(this.terrain);
+    // ระบบนิเวศ: สัตว์รู้จักต้นไม้ หิน ตึก ถ้ำ เขตป่าลึก (รอบสอง ช่วง 12)
+    this.animals = new Animals({ terrain: this.terrain, colliders: this.colliders, structures: this.structures, caves: this.caves, wild: new WildZones(this.terrain, fallSpot), trees: this.treeGrid });
     this.scene.add(this.animals.group);
+    this.critters = new Critters(this.terrain);
+    this.scene.add(this.critters.group);
     // โดนรุมก็โดนตีได้ทีละครั้ง เว้น 1.5 วินาที มีเวลาหนีหรือยิงหมึก
     let lastHit = -99;
     this.animals.onAttack = () => {
@@ -566,6 +587,8 @@ export class App {
   private continueGame(): void {
     const d = readSave();
     if (d && !this.live) this.restore(d);
+    // ของที่ติดตัวมาจากบันทึกไม่ใช่ของใหม่
+    this.inventory.markSeen(this.loadout);
     this.startPlaying();
   }
 
@@ -758,49 +781,64 @@ export class App {
     }
   }
 
-  /** ของที่สแกนได้ในทิศที่มอง · ช่วงนี้มีต้นไม้กับหิน (ช่วง 6 เพิ่มของมนุษย์ ช่วง 9 เพิ่มสัตว์) */
+  /**
+   * ของที่สแกนได้ในทิศที่มอง · เลือกชิ้นที่ตรงทิศที่สุด แล้วเช็กว่าไม่มีผนัง ตึก ภูเขา บังอยู่ (รายงานตรวจข้อ 121 132)
+   * ต้นไม้กับหินดูแค่ช่องรอบตัวในตาราง (เดิมวนทั้งแมพทุกเฟรมที่สแกน)
+   */
   findScanTarget(origin: THREE.Vector3, dir: THREE.Vector3): ScanTarget | null {
-    let best: ScanTarget | null = null;
-    let bestCos = 0.975;
     const p = this.player;
-    const test = (key: string, kind: string, x: number, y: number, z: number) => {
+    const cand = this.scanCand;
+    cand.length = 0;
+    const test = (key: string, kind: string, x: number, y: number, z: number, wall = true) => {
       const dx = x - origin.x;
       const dy = y - origin.y;
       const dz = z - origin.z;
       const d = Math.hypot(dx, dy, dz);
       if (d > 28 || d < 0.5) return;
       const c = (dx * dir.x + dy * dir.y + dz * dir.z) / d;
-      if (c > bestCos) { bestCos = c; best = { key, kind, x, y, z }; }
+      if (c > 0.975) cand.push({ key, kind, x, y, z, c, wall });
     };
-    this.vegetation.trees.forEach((set) => set.items.forEach((it) => {
-      if (Math.abs(it.x - p.x) < 30 && Math.abs(it.z - p.z) < 30) test(`tree-${set.kind}@${Math.round(it.x)},${Math.round(it.z)}`, scanKindOf(set.kind), it.x, it.y + 2.5 * it.scale, it.z);
-    }));
-    this.vegetation.rocks.forEach((r) => {
-      if (Math.abs(r.x - p.x) < 30 && Math.abs(r.z - p.z) < 30) test(`rock@${Math.round(r.x)},${Math.round(r.z)}`, 'rock', r.x, r.y + 0.4 * r.scale, r.z);
-    });
+    for (const tr of this.treeGrid.near(p.x, p.z, 30, this.scanTrees)) test(`tree-${tr.kind}@${Math.round(tr.x)},${Math.round(tr.z)}`, scanKindOf(tr.kind), tr.x, tr.y + Math.min(2.5, tr.height * 0.25), tr.z);
+    for (const r of this.rockGrid.near(p.x, p.z, 30, this.scanRocks)) test(`rock@${Math.round(r.x)},${Math.round(r.z)}`, ROCK_SCAN[rockTypeOf(r.variant)], r.x, r.y + 0.4 * r.scale, r.z);
     const H: Record<string, number> = { car: 0.9, bus: 1.6, lamp: 5, mailbox: 0.8, sign: 2.6 };
     for (const pp of this.props.all) {
       if (pp.taken || Math.abs(pp.prop.x - p.x) > 30 || Math.abs(pp.prop.z - p.z) > 30) continue;
       test(pp.prop.key, pp.prop.kind, pp.prop.x, pp.y + (H[pp.prop.kind] ?? 0.12), pp.prop.z);
     }
     for (const c of this.corpses) if (Math.abs(c.x - p.x) < 30 && Math.abs(c.z - p.z) < 30) test(c.key, 'remains', c.x, c.y + 0.3, c.z);
-    for (const f of this.fish.targets(p.x, p.z, 25)) test(f.key, 'fish', f.x, f.y, f.z);
-    // ดอกไม้ เฟิร์น เห็ด สแกนได้ (เดิมอยู่ในคอลเลกชันแต่ไม่มีทางสแกน หมวดพืชไม่มีวันครบ) · ช่วง 12 แยกข้อความสแกนดอกไม้ทีละชนิด
-    for (const f of this.grass.flowersNear(p.x, p.z, 14)) if ((FLOWER_IDS as string[]).includes(f.kind)) test(`flower-${f.kind}@${Math.round(f.x * 2)},${Math.round(f.z * 2)}`, 'flower', f.x, f.y + f.scale * 0.8, f.z);
-    for (const kind of ['fern', 'mushroom', 'flower'] as const) {
-      for (const pl of this.vegetation.plantsNow[kind]) if (Math.abs(pl.x - p.x) < 14 && Math.abs(pl.z - p.z) < 14) test(`${kind}@${Math.round(pl.x * 2)},${Math.round(pl.z * 2)}`, kind, pl.x, pl.y + 0.3 * pl.scale, pl.z);
+    for (const f of this.fish.targets(p.x, p.z, 25)) test(f.key, f.kind, f.x, f.y, f.z);
+    // ดอกไม้ 13 ชนิด พืชริมน้ำ (ทุ่งหญ้า) · เฟิร์น เห็ด ดอกไม้ป่า พุ่มไม้ 6 ชนิด (พืชเล็กในป่า)
+    for (const f of this.grass.flowersNear(p.x, p.z, 14)) test(`flower-${f.kind}@${Math.round(f.x * 2)},${Math.round(f.z * 2)}`, plantScanKind(f.kind), f.x, f.y + f.scale * 0.8, f.z);
+    for (const kind of ['fern', 'mushroom', 'flower', 'bush'] as const) {
+      for (const pl of this.vegetation.plantsNow[kind]) {
+        if (Math.abs(pl.x - p.x) > 14 || Math.abs(pl.z - p.z) > 14) continue;
+        const sk = kind === 'bush' ? SHRUB_IDS[pl.variant ?? 0] : kind;
+        test(`${sk}@${Math.round(pl.x * 2)},${Math.round(pl.z * 2)}`, sk, pl.x, pl.y + (kind === 'bush' ? 0.8 : 0.3) * pl.scale, pl.z);
+      }
     }
-    for (const b of this.town.buildings) if (Math.abs(b.x - p.x) < 40 && Math.abs(b.z - p.z) < 40) test(b.key, 'building', b.x, b.y + Math.min(b.h, 6) / 2, b.z);
+    // ตึกเล็งที่กลางตัวตึก ไม่ต้องเช็กว่าตึกบังตัวเอง
+    for (const b of this.town.buildings) if (Math.abs(b.x - p.x) < 40 && Math.abs(b.z - p.z) < 40) test(b.key, 'building', b.x, b.y + Math.min(b.h, 6) / 2, b.z, false);
     for (const s of this.cavesView.scannables) if (Math.abs(s.x - p.x) < 30 && Math.abs(s.z - p.z) < 30) test(s.key, s.kind, s.x, s.y, s.z);
     for (const an of this.animals.scanTargets()) if (Math.abs(an.x - p.x) < 30 && Math.abs(an.z - p.z) < 30) test(an.key, an.kind, an.x, an.y, an.z);
+    for (const cr of this.critters.targets(p.x, p.z, 30)) test(cr.key, cr.kind, cr.x, cr.y, cr.z);
     const ff = this.animals.nearestFirefly(p.x, p.z);
     if (ff) test(`firefly-${ff.i}`, 'firefly', ff.x, ff.y, ff.z);
     const bp = this.town.bridge[0];
     if (bp && Math.abs(bp.x - p.x) < 40 && Math.abs(bp.z - p.z) < 40) test('bridge-0', 'bridge', bp.x, bp.y1, bp.z);
-    const found = best as ScanTarget | null;
+    // ตรงทิศที่สุดก่อน · ชิ้นที่ถูกบังข้ามไปดูชิ้นถัดไป (ดูไม่เกิน 6 ชิ้น)
+    cand.sort((a, b) => b.c - a.c);
+    let found: ScanTarget | null = null;
+    for (let i = 0; i < Math.min(6, cand.length) && !found; i++) {
+      const c = cand[i];
+      if (inSight(this.terrain, this.structures, origin, c.x, c.y, c.z, c.wall)) found = { key: c.key, kind: c.kind, x: c.x, y: c.y, z: c.z };
+    }
     if (found) found.special = found.kind === 'remains' || found.kind === 'painting' || (this.props.byKey.get(found.key)?.prop.special ?? false);
     return found;
   }
+
+  private scanCand: { key: string; kind: string; x: number; y: number; z: number; c: number; wall: boolean }[] = [];
+  private scanTrees: TreePoint[] = [];
+  private scanRocks: Placed[] = [];
 
   /** สแกนเสร็จ (ช่วง 6 ทำข้อความสแกน 3 ชั้น) */
   onScanned(target: ScanTarget): void {
@@ -1125,7 +1163,7 @@ export class App {
     this.updateInteract();
     if (this.interact && inp.wasPressed('KeyE')) this.interact.run();
     else if (this.interact?.alt && inp.wasPressed(this.interact.alt.code)) this.interact.alt.run();
-    this.scanCard.update(this.elapsed);
+    this.scanCard.update(this.elapsed, this.scanCard.root.hidden ? 0 : this.hud.toastBottom());
     for (const b of this.droppedBags) {
       const bc = b.object.getObjectByName('beacon');
       if (bc) bc.visible = b.beacon && Math.sin(this.elapsed * 4) > -0.2;
@@ -1143,7 +1181,23 @@ export class App {
     this.applyCaveDim();
     this.updateWeather(dt);
     this.cavesView.update(this.elapsed);
-    this.animals.update(dt, p.x, p.y, p.z, this.sky.night > 0.5, this.elapsed);
+    // ผู้เล่นอยู่ในถ้ำหรือบนหลังคา สัตว์ไล่ไม่ถึง เลิกไล่กลับที่อยู่ (รายงานตรวจข้อ 99)
+    const af = this.animalFrame;
+    const groundHere = this.terrain.heightAt(p.x, p.z);
+    this.camera.getWorldDirection(this.camDir);
+    const cl = Math.hypot(this.camDir.x, this.camDir.z) || 1;
+    af.dt = dt;
+    af.px = p.x;
+    af.py = p.y;
+    af.pz = p.z;
+    af.reach = p.y > groundHere - 2 && p.y < groundHere + 2.5;
+    af.timeOfDay = this.skyState.timeOfDay;
+    af.rain = this.weather.rain;
+    af.time = this.elapsed;
+    af.fx = this.camDir.x / cl;
+    af.fz = this.camDir.z / cl;
+    this.animals.update(af);
+    this.critters.update(dt, this.elapsed, p.x, p.z, dayPart(this.skyState.timeOfDay), this.weather.rain, this.grass.flowersNear(p.x, p.z, 35), af.fx, af.fz);
     this.fish.update(dt, this.elapsed, p.x, p.z, this.sky.night < 0.5);
     this.waterfall.update(dt, 0.15 + 0.85 * this.sky.brightness);
     this.updateAudio(dt);

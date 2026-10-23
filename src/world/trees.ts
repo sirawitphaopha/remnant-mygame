@@ -33,30 +33,28 @@ export interface TreeSpecies {
   bloom?: number;
   fruit?: number;
   conifer: boolean;
-  /** ชนิดในคอลเลกชันที่ใช้ข้อความสแกนไปก่อน (ช่วง 12 ทำข้อความสแกนของทุกชนิด) */
-  scanKind: 'pine' | 'oak' | 'birch' | 'dead';
 }
 
 export const TREE_SPECIES: TreeSpecies[] = [
-  { id: 'scotsPine', form: 'pine', height: [18, 30], trunk: 0.3, leaf: [0x2e4a2c, 0x3a5530], conifer: true, scanKind: 'pine' },
-  { id: 'redwood', form: 'redwood', height: [55, 85], trunk: 0.42, leaf: [0x2a4228, 0x324c2c], conifer: true, scanKind: 'pine' },
-  { id: 'spruce', form: 'spruce', height: [28, 42], trunk: 0.32, leaf: [0x1f3a26, 0x284430], conifer: true, scanKind: 'pine' },
-  { id: 'fir', form: 'fir', height: [28, 42], trunk: 0.3, leaf: [0x23402c, 0x2c4b33], conifer: true, scanKind: 'pine' },
-  { id: 'oak', form: 'broad', height: [15, 24], trunk: 0.55, leaf: [0x3c5a26, 0x47662c], conifer: false, scanKind: 'oak' },
-  { id: 'birch', form: 'birch', height: [14, 22], trunk: 0.22, leaf: [0x6c8a35, 0x7d9940], conifer: false, scanKind: 'birch' },
-  { id: 'maple', form: 'tallBroad', height: [18, 28], trunk: 0.4, leaf: [0x8a4a1e, 0x4a6a28], conifer: false, scanKind: 'oak' },
-  { id: 'beech', form: 'tallBroad', height: [20, 30], trunk: 0.42, leaf: [0x4f6e2a, 0x5d7a30], conifer: false, scanKind: 'oak' },
-  { id: 'willow', form: 'weeping', height: [12, 20], trunk: 0.5, leaf: [0x7a9a42, 0x8aa84c], conifer: false, scanKind: 'oak' },
-  { id: 'alder', form: 'tallBroad', height: [14, 24], trunk: 0.36, leaf: [0x34502a, 0x3e5c2e], conifer: false, scanKind: 'oak' },
-  { id: 'fig', form: 'fig', height: [24, 34], trunk: 0.9, leaf: [0x2a4a22, 0x335626], conifer: false, scanKind: 'oak' },
-  { id: 'yangNa', form: 'emergent', height: [34, 50], trunk: 0.55, leaf: [0x35532a, 0x3f5e2e], conifer: false, scanKind: 'oak' },
-  { id: 'palm', form: 'palm', height: [7, 13], trunk: 0.2, leaf: [0x3d6a2a, 0x4a7630], conifer: false, scanKind: 'oak' },
-  { id: 'treeFern', form: 'treeFern', height: [3.5, 7], trunk: 0.18, leaf: [0x3f6e2c, 0x4c7a32], conifer: false, scanKind: 'oak' },
-  { id: 'bamboo', form: 'bamboo', height: [14, 24], trunk: 1.0, leaf: [0x6a8a36, 0x7a9a40], conifer: false, scanKind: 'oak' },
-  { id: 'cherry', form: 'blossom', height: [8, 15], trunk: 0.32, leaf: [0x4a6a2a, 0x557230], bloom: 0xe8a6c4, conifer: false, scanKind: 'oak' },
-  { id: 'jacaranda', form: 'blossom', height: [8, 15], trunk: 0.3, leaf: [0x4e6e2c, 0x5a7832], bloom: 0x8a6ad0, conifer: false, scanKind: 'oak' },
-  { id: 'apple', form: 'orchard', height: [4, 8], trunk: 0.3, leaf: [0x4a6a2a, 0x56742e], fruit: 0xb8322a, conifer: false, scanKind: 'oak' },
-  { id: 'mango', form: 'broad', height: [10, 18], trunk: 0.5, leaf: [0x2c4a20, 0x365424], fruit: 0xb8b040, conifer: false, scanKind: 'oak' },
+  { id: 'scotsPine', form: 'pine', height: [18, 30], trunk: 0.3, leaf: [0x2e4a2c, 0x3a5530], conifer: true },
+  { id: 'redwood', form: 'redwood', height: [55, 85], trunk: 0.42, leaf: [0x2a4228, 0x324c2c], conifer: true },
+  { id: 'spruce', form: 'spruce', height: [28, 42], trunk: 0.32, leaf: [0x1f3a26, 0x284430], conifer: true },
+  { id: 'fir', form: 'fir', height: [28, 42], trunk: 0.3, leaf: [0x23402c, 0x2c4b33], conifer: true },
+  { id: 'oak', form: 'broad', height: [15, 24], trunk: 0.55, leaf: [0x3c5a26, 0x47662c], conifer: false },
+  { id: 'birch', form: 'birch', height: [14, 22], trunk: 0.22, leaf: [0x6c8a35, 0x7d9940], conifer: false },
+  { id: 'maple', form: 'tallBroad', height: [18, 28], trunk: 0.4, leaf: [0x8a4a1e, 0x4a6a28], conifer: false },
+  { id: 'beech', form: 'tallBroad', height: [20, 30], trunk: 0.42, leaf: [0x4f6e2a, 0x5d7a30], conifer: false },
+  { id: 'willow', form: 'weeping', height: [12, 20], trunk: 0.5, leaf: [0x7a9a42, 0x8aa84c], conifer: false },
+  { id: 'alder', form: 'tallBroad', height: [14, 24], trunk: 0.36, leaf: [0x34502a, 0x3e5c2e], conifer: false },
+  { id: 'fig', form: 'fig', height: [24, 34], trunk: 0.9, leaf: [0x2a4a22, 0x335626], conifer: false },
+  { id: 'yangNa', form: 'emergent', height: [34, 50], trunk: 0.55, leaf: [0x35532a, 0x3f5e2e], conifer: false },
+  { id: 'palm', form: 'palm', height: [7, 13], trunk: 0.2, leaf: [0x3d6a2a, 0x4a7630], conifer: false },
+  { id: 'treeFern', form: 'treeFern', height: [3.5, 7], trunk: 0.18, leaf: [0x3f6e2c, 0x4c7a32], conifer: false },
+  { id: 'bamboo', form: 'bamboo', height: [14, 24], trunk: 1.0, leaf: [0x6a8a36, 0x7a9a40], conifer: false },
+  { id: 'cherry', form: 'blossom', height: [8, 15], trunk: 0.32, leaf: [0x4a6a2a, 0x557230], bloom: 0xe8a6c4, conifer: false },
+  { id: 'jacaranda', form: 'blossom', height: [8, 15], trunk: 0.3, leaf: [0x4e6e2c, 0x5a7832], bloom: 0x8a6ad0, conifer: false },
+  { id: 'apple', form: 'orchard', height: [4, 8], trunk: 0.3, leaf: [0x4a6a2a, 0x56742e], fruit: 0xb8322a, conifer: false },
+  { id: 'mango', form: 'broad', height: [10, 18], trunk: 0.5, leaf: [0x2c4a20, 0x365424], fruit: 0xb8b040, conifer: false },
 ];
 export const SPECIES_BY_ID = new Map(TREE_SPECIES.map((s) => [s.id, s]));
 
@@ -103,10 +101,13 @@ export const ORCHARD_ROWS = { angle: 0.32, along: 6.5, across: 8 } as const;
 /** ชนิดของต้นตาย ตามชนิดต้นเดิม */
 export const deadKindOf = (s: TreeSpecies): DeadKind => (s.conifer ? 'deadConifer' : 'deadBroad');
 
-/** ชนิดในคอลเลกชันที่ใช้ข้อความสแกน */
-export function scanKindOf(kind: TreeKind): 'pine' | 'oak' | 'birch' | 'dead' {
+/**
+ * ชนิดในคอลเลกชันที่ใช้ข้อความสแกน · ทุกชนิดมีข้อความของตัวเองแล้ว (รอบสอง ช่วง 12)
+ * สนสก็อตใช้รหัส pine เดิม (บันทึกเก่าใช้ต่อได้) · ต้นตายทั้งสองแบบเป็น dead
+ */
+export function scanKindOf(kind: TreeKind): string {
   if (kind === 'deadConifer' || kind === 'deadBroad') return 'dead';
-  return SPECIES_BY_ID.get(kind)?.scanKind ?? 'oak';
+  return kind === 'scotsPine' ? 'pine' : kind;
 }
 
 /** รัศมีตัวชนลำต้นที่โคน (เมตร) ตามความสูงจริงของต้น */

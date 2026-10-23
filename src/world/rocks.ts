@@ -26,6 +26,9 @@ export const ROCK_SHAPE: Record<RockType, { r: number; top: number }> = {
 /** ชนิดของหินจากเลขแบบ (variant = ชนิด × 2 + แบบย่อย) */
 export const rockTypeOf = (variant: number | undefined): RockType => ROCK_TYPES[Math.floor((variant ?? 0) / 2)] ?? 'granite';
 
+/** ชนิดในคอลเลกชันของหินแต่ละแบบ (ก้อนแกรนิตใช้รหัส rock เดิม) · รอบสอง ช่วง 12 */
+export const ROCK_SCAN: Record<RockType, string> = { granite: 'rock', slab: 'slab', river: 'riverStone', scree: 'scree', outcrop: 'outcrop', mossy: 'mossyRock' };
+
 export function scatterRocks(t: Terrain): Placed[] {
   const cell = 11;
   const out: Placed[] = [];

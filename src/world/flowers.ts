@@ -26,6 +26,10 @@ export const FLOWER_HEIGHT: Record<FlowerId, [number, number]> = {
   buttercup: [0.2, 0.4], orchid: [0.3, 0.5], waterLily: [0.05, 0.1],
 };
 /** ธูปฤาษี 0.8 ถึง 2.4 · อ้อในเกม 1.5 ถึง 3 (แหล่งอ้างอิงถึง 4) · หญ้าหางม้า 0.3 ถึง 0.9 · หิน = ขนาด */
+/** ชนิดในคอลเลกชันของดอกไม้และพืชริมน้ำ (หินกรวดริมน้ำเป็นหินกลมริมน้ำ) · รอบสอง ช่วง 12 */
+export function plantScanKind(kind: TilePlantId): string {
+  return kind === 'stone' ? 'riverStone' : kind;
+}
 export const RIVER_PLANT_SIZE: Record<RiverPlantId, [number, number]> = { cattail: [0.8, 2.4], reed: [1.5, 3], horsetail: [0.3, 0.9], stone: [0.15, 0.5] };
 
 export interface FlowerSpot { kind: TilePlantId; x: number; y: number; z: number; rot: number; scale: number }

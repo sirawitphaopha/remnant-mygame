@@ -1,18 +1,14 @@
-// สัตว์ 12 ชนิด · นิสัย ที่อยู่ เวลา และผลของหมึก (ต้องสแกนก่อนถึงรู้) · กติกาล้วน
+// สัตว์ 14 ชนิด · นิสัยต่อผู้เล่น และผลของหมึก (ต้องสแกนก่อนถึงรู้) · กติกาล้วน
 // พี่กันเคาะ: ส่วนใหญ่ขี้กลัว มีตัวดุไม่กี่ชนิดอยู่ป่าลึก · หมึกไม่ทำให้ตาย บางตัวตกใจ บางตัวเฉย บางตัวดุกว่าเดิม หมึกเหนียวทำให้ช้าลง
+// ถิ่น เวลาออกหากิน ฝูง อาหาร อยู่ในระบบนิเวศ core/ecology.ts (รอบสอง ช่วง 12) · ปลาอยู่ในระบบฝูงปลา render/Fish.ts
 
-export type Habitat = 'meadow' | 'forest' | 'deep' | 'water' | 'shore' | 'sky' | 'town';
 export type InkReaction = 'flee' | 'ignore' | 'enraged';
-export type Movement = 'walk' | 'fly' | 'swim' | 'hop' | 'flutter' | 'glow';
-export type Active = 'day' | 'night' | 'always';
+/** walk เดิน · fly บิน · hop กระโดด · flutter ผีเสื้อ · glow หิ่งห้อย · climb ปีนต้นไม้ (กระรอก) · flock บินเป็นฝูง (นกกิ้งโครง) · buzz บินวนดอกไม้ (ผึ้ง) */
+export type Movement = 'walk' | 'fly' | 'hop' | 'flutter' | 'glow' | 'climb' | 'flock' | 'buzz';
 
 export interface Species {
   id: string;
   move: Movement;
-  habitat: Habitat;
-  active: Active;
-  /** จำนวนรอบตัวผู้เล่น */
-  count: number;
   speed: number;
   /** เข้าใกล้เท่านี้แล้ววิ่งหนี (0 = ไม่หนี) */
   flee: number;
@@ -21,23 +17,25 @@ export interface Species {
   ink: InkReaction;
   /** ความสูงลำตัวไว้เล็งสแกน */
   height: number;
-  size: number;
+  /** รัศมีตัวชน (ชนต้นไม้ หิน ตึก เหมือนผู้เล่น) */
+  radius: number;
 }
 
 export const SPECIES: Species[] = [
-  { id: 'deer', move: 'walk', habitat: 'meadow', active: 'always', count: 4, speed: 7, flee: 22, aggro: 0, ink: 'flee', height: 1.1, size: 1 },
-  { id: 'rabbit', move: 'hop', habitat: 'meadow', active: 'always', count: 5, speed: 6, flee: 12, aggro: 0, ink: 'flee', height: 0.25, size: 1 },
-  { id: 'fox', move: 'walk', habitat: 'forest', active: 'always', count: 2, speed: 6, flee: 8, aggro: 0, ink: 'ignore', height: 0.45, size: 1 },
-  { id: 'crow', move: 'fly', habitat: 'town', active: 'day', count: 4, speed: 8, flee: 10, aggro: 0, ink: 'flee', height: 0, size: 1 },
-  { id: 'eagle', move: 'fly', habitat: 'sky', active: 'day', count: 1, speed: 10, flee: 0, aggro: 0, ink: 'ignore', height: 0, size: 1 },
-  // ปลาย้ายไประบบฝูงปลา (render/Fish.ts รอบสอง ช่วง 6) เก็บชนิดไว้ให้คอลเลกชัน
-  { id: 'fish', move: 'swim', habitat: 'water', active: 'always', count: 0, speed: 2.5, flee: 5, aggro: 0, ink: 'flee', height: 0, size: 1 },
-  { id: 'frog', move: 'hop', habitat: 'shore', active: 'always', count: 4, speed: 3, flee: 3, aggro: 0, ink: 'ignore', height: 0.12, size: 1 },
-  { id: 'butterfly', move: 'flutter', habitat: 'meadow', active: 'day', count: 10, speed: 1.5, flee: 0, aggro: 0, ink: 'ignore', height: 0, size: 1 },
-  { id: 'firefly', move: 'glow', habitat: 'meadow', active: 'night', count: 40, speed: 0.6, flee: 0, aggro: 0, ink: 'ignore', height: 0, size: 1 },
-  { id: 'owl', move: 'fly', habitat: 'forest', active: 'night', count: 2, speed: 6, flee: 9, aggro: 0, ink: 'flee', height: 0, size: 1 },
-  { id: 'wolf', move: 'walk', habitat: 'deep', active: 'always', count: 3, speed: 4.6, flee: 0, aggro: 24, ink: 'ignore', height: 0.7, size: 1 },
-  { id: 'bear', move: 'walk', habitat: 'deep', active: 'always', count: 1, speed: 4.6, flee: 0, aggro: 18, ink: 'enraged', height: 1.2, size: 1 },
+  { id: 'deer', move: 'walk', speed: 7, flee: 22, aggro: 0, ink: 'flee', height: 1.1, radius: 0.4 },
+  { id: 'rabbit', move: 'hop', speed: 6, flee: 12, aggro: 0, ink: 'flee', height: 0.25, radius: 0.15 },
+  { id: 'fox', move: 'walk', speed: 6, flee: 8, aggro: 0, ink: 'ignore', height: 0.45, radius: 0.25 },
+  { id: 'crow', move: 'fly', speed: 8, flee: 10, aggro: 0, ink: 'flee', height: 0, radius: 0.15 },
+  { id: 'eagle', move: 'fly', speed: 10, flee: 0, aggro: 0, ink: 'ignore', height: 0, radius: 0.3 },
+  { id: 'frog', move: 'hop', speed: 3, flee: 3, aggro: 0, ink: 'ignore', height: 0.12, radius: 0.08 },
+  { id: 'butterfly', move: 'flutter', speed: 1.5, flee: 0, aggro: 0, ink: 'ignore', height: 0, radius: 0 },
+  { id: 'firefly', move: 'glow', speed: 0.6, flee: 0, aggro: 0, ink: 'ignore', height: 0, radius: 0 },
+  { id: 'owl', move: 'fly', speed: 6, flee: 9, aggro: 0, ink: 'flee', height: 0, radius: 0.2 },
+  { id: 'wolf', move: 'walk', speed: 4.6, flee: 0, aggro: 24, ink: 'ignore', height: 0.7, radius: 0.35 },
+  { id: 'bear', move: 'walk', speed: 4.6, flee: 0, aggro: 18, ink: 'enraged', height: 1.2, radius: 0.6 },
+  { id: 'starling', move: 'flock', speed: 11, flee: 14, aggro: 0, ink: 'flee', height: 0, radius: 0 },
+  { id: 'squirrel', move: 'climb', speed: 5, flee: 9, aggro: 0, ink: 'flee', height: 0.15, radius: 0.1 },
+  { id: 'bee', move: 'buzz', speed: 3, flee: 0, aggro: 0, ink: 'ignore', height: 0, radius: 0 },
 ];
 
 export const SPECIES_BY_ID = new Map(SPECIES.map((s) => [s.id, s]));
@@ -105,4 +103,13 @@ export function decide(m: AnimalMind, s: Species, dt: number, dist: number, from
   if (s.flee > 0 && dist < s.flee) return (m.mode = 'flee');
   if (m.mode === 'flee' && dist < s.flee * 2.2) return m.mode;
   return (m.mode = 'wander');
+}
+
+/**
+ * ความเร็วที่อยากวิ่งตอนไล่ · ถึงระยะตีแล้วหยุด ไม่วิ่งทับตัวผู้เล่นแล้วหมุนไปมา (รายงานตรวจข้อ 100)
+ * ช่วงใกล้ระยะตีค่อย ๆ ผ่อนความเร็ว
+ */
+export function chaseWant(dist: number, speed: number, stopAt = ATTACK_RANGE * 0.8): number {
+  if (dist <= stopAt) return 0;
+  return speed * Math.min(1, (dist - stopAt) / 1.5);
 }

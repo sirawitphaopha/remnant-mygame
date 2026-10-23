@@ -1,7 +1,7 @@
 import { KINDS, kind as kindOf, type Category, type Kind } from '../core/catalog';
 import { SPECIES_BY_ID } from '../core/animals';
 import { GEAR, buildLoadout, choiceSlots, held, slotKg, type Loadout, type ShipChoice } from '../core/gear';
-import { bagCap, bagContents, carriedKg, carryLimit, contentsKg, isBag } from '../core/inventory';
+import { bagCap, bagContents, carriedKg, carryLimit, contentsKg, isBag, type BagContents } from '../core/inventory';
 import type { ScanLog } from '../core/scanlog';
 import { ICONS } from './icons';
 import { getLang, onLangChange, t, tf, type StrKey } from './strings';
@@ -39,7 +39,8 @@ function layersHtml(k: Kind, log: ScanLog): string {
   const count = log.count(k.id);
   const truth = log.truth(k.id);
   const hasLog = log.log(k.id);
-  const dots = [0, 1, 2].map((i) => `<i class="${i < count ? 'on' : ''}"></i>`).join('');
+  // จุดเท่าจำนวนชิ้นที่ต้องสแกน (ชนิดที่มีในโลกไม่ถึง 3 ชิ้น ต้องสแกนน้อยกว่า)
+  const dots = Array.from({ length: log.needFor(k.id) }, (_, i) => `<i class="${i < count ? 'on' : ''}"></i>`).join('');
   // สัตว์: ผลของหมึก ต้องสแกนก่อนถึงรู้
   const sp = SPECIES_BY_ID.get(k.id);
   const ink = sp && count > 0 ? `<div class="layer"><span class="lt">${t('inkLabel')}</span>${t(sp.ink === 'flee' ? 'inkFlee' : sp.ink === 'enraged' ? 'inkEnraged' : 'inkIgnore')}</div>` : '';
@@ -107,8 +108,22 @@ export class InventoryScreen {
   }
 
   hide(): void {
+    // ปิดหน้ากระเป๋า = ของที่เห็นแล้วไม่ใหม่อีก
+    if (!this.root.hidden && this.data && !this.data.viewOnly) this.markSeen(this.data.loadout);
     this.root.hidden = true;
     this.viewer.stop();
+  }
+
+  /** ของที่เคยเห็นในหน้ากระเป๋าแล้ว · ของที่เก็บมาหลังปิดหน้ากระเป๋าครั้งก่อนติดป้าย "ใหม่" (รายงานตรวจข้อ 65 · มอคอัปหน้า 5) */
+  private seen = new WeakSet<object>();
+
+  /** นับของทุกชิ้นในทุกกระเป๋า (รวมกระเป๋าซ้อน) ว่าเห็นแล้ว · App เรียกตอนโหลดบันทึกด้วย ของเดิมไม่ขึ้นว่าใหม่ */
+  markSeen(l: Loadout): void {
+    const walk = (c: BagContents) => {
+      for (const it of c.items) this.seen.add(it);
+      for (const nb of c.bags) walk(nb.contents);
+    };
+    l.belt.forEach((s, i) => { const c = isBag(s) ? bagContents(l, i) : null; if (c) walk(c); });
   }
 
   private onClick(e: MouseEvent): void {
@@ -176,7 +191,7 @@ export class InventoryScreen {
           ${bags.length > 1 ? `<div class="tabs small">${bags.map((i) => `<button type="button" class="tab ${i === this.bagSlot ? 'on' : ''}" data-act="bag" data-v="${i}">${t('bagOf')} ${i + 1}</button>`).join('')}</div>` : ''}
           <h4>${bagTitle}</h4>
           <div class="grid-slots">
-            ${items.map((it) => `<button type="button" class="gslot ${this.selectedItem === it.itemId ? 'sel' : ''}" data-act="item" data-v="${it.itemId}">${ICONS.item}<span class="gname">${esc(shownName(kindOf(it.itemId)!, this.data.log.truth(it.itemId)))}</span><span class="kg">${it.kg.toFixed(2)}</span></button>`).join('')}
+            ${items.map((it) => `<button type="button" class="gslot ${this.selectedItem === it.itemId ? 'sel' : ''} ${this.seen.has(it) ? '' : 'new'}" data-act="item" data-v="${it.itemId}">${this.seen.has(it) ? '' : `<span class="tag">${t('newItem')}</span>`}${ICONS.item}<span class="gname">${esc(shownName(kindOf(it.itemId)!, this.data.log.truth(it.itemId)))}</span><span class="kg">${it.kg.toFixed(2)}</span></button>`).join('')}
             ${(c?.bags ?? []).map((nb, i) => `<button type="button" class="gslot nested" data-act="unnest" data-v="${i}">${ICONS.bag}<span class="tag">${t('nested')}</span><span class="gname">${t('unnestBag')}</span><span class="kg">${(GEAR.bag[nb.size].kg + contentsKg(nb.contents)).toFixed(1)}</span></button>`).join('')}
             ${Array(Math.max(0, 10 - items.length - (c?.bags.length ?? 0))).fill('<div class="gslot blank"></div>').join('')}
           </div>
@@ -368,13 +383,22 @@ export class ScanCard {
     const truth = log.truth(kindId);
     this.root.innerHTML = `
       <div class="kind">${unlocked ? `${t('newLayer')} · ` : ''}${k.small ? t('smallObj') : t('largeObj')}</div>
-      <h3>${esc(shownName(k, truth))}${truth ? '' : ` <small>${t('scanned')} ${log.count(kindId)}/3</small>`}</h3>
+      <h3>${esc(shownName(k, truth))}${truth ? '' : ` <small>${t('scanned')} ${log.count(kindId)}/${log.needFor(kindId)}</small>`}</h3>
       ${layersHtml(k, log)}`;
     this.root.hidden = false;
     this.until = now + 9;
   }
 
-  update(now: number): void {
+  update(now: number, below = 0): void {
     if (!this.root.hidden && now > this.until) this.root.hidden = true;
+    if (this.root.hidden) return;
+    // อยู่ใต้กองข้อความสั้นเสมอ ความสูงไม่ล้นลงไปทับแถบสถานะล่างซ้าย
+    const top = Math.max(210, Math.round(below) + 12);
+    if (top !== this.top) {
+      this.top = top;
+      this.root.style.top = `${top}px`;
+      this.root.style.maxHeight = `calc(100vh - ${top + 150}px)`;
+    }
   }
+  private top = 210;
 }

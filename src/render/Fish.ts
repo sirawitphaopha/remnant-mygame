@@ -8,7 +8,8 @@ import { assemble, type Part } from './models/build';
 // ปลา 2 ชนิดเป็นฝูง กับแมลงปอริมน้ำ (รอบสอง ช่วง 6) · ปลาถ้ำไม่มีตาทำในช่วง 11
 // เทราต์สีน้ำตาลในแม่น้ำ หันหัวทวนน้ำ · ปลาไนในทะเลสาบ ว่ายช้า · บางตัวกระโดดพ้นน้ำ · เข้าใกล้แล้วฝูงหนี
 
-function fishGeometry(kind: FishKind): THREE.BufferGeometry {
+/** รูปทรงปลา (ใช้ในหน้าคอลเลกชันด้วย) */
+export function fishGeometry(kind: FishKind): THREE.BufferGeometry {
   const trout = kind === 'trout';
   const len = trout ? 0.42 : 0.5;
   const deep = trout ? 0.09 : 0.16;
@@ -87,11 +88,11 @@ export class Fish {
   }
 
   /** ปลาที่อยู่ใกล้ (ใช้หาเป้าสแกน) */
-  targets(x: number, z: number, r: number): { key: string; x: number; y: number; z: number }[] {
-    const out: { key: string; x: number; y: number; z: number }[] = [];
+  targets(x: number, z: number, r: number): { key: string; kind: FishKind; x: number; y: number; z: number }[] {
+    const out: { key: string; kind: FishKind; x: number; y: number; z: number }[] = [];
     this.schools.forEach((s, si) => {
       if ((s.x - x) ** 2 + (s.z - z) ** 2 > (r + 4) ** 2) return;
-      s.members.forEach((m, mi) => out.push({ key: `fish-${s.kind}-${si}-${mi}`, x: s.x + m.ox, y: WORLD.waterLevel - m.depth, z: s.z + m.oz }));
+      s.members.forEach((m, mi) => out.push({ key: `fish-${s.kind}-${si}-${mi}`, kind: s.kind, x: s.x + m.ox, y: WORLD.waterLevel - m.depth, z: s.z + m.oz }));
     });
     return out;
   }
