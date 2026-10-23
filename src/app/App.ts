@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { DEFAULT_QUALITY, QUALITY, type QualityLevel, type QualityPreset } from '../config/quality';
+import { DAY_SECONDS, START_TIME, skyAt, type SkyState } from '../core/time';
 import { SPAWN_POINT } from '../world/layout';
 import { Terrain } from '../world/Terrain';
 import { Player } from '../player/Player';
 import { CameraRig } from '../render/CameraRig';
+import { Sky } from '../render/Sky';
 import { Grass } from '../render/Grass';
 import { TerrainMesh } from '../render/TerrainMesh';
 import { Vegetation } from '../render/Vegetation';
@@ -26,6 +28,13 @@ export class App {
   readonly rig: CameraRig;
   readonly sun: THREE.DirectionalLight;
   readonly hemi: THREE.HemisphereLight;
+  readonly sky = new Sky();
+  readonly fog = new THREE.FogExp2(0xb7cdd6, 0.0034);
+  /** เวลาในเกม วินาทีนับจาก 00:00 ของวันแรก */
+  gameTime = START_TIME * DAY_SECONDS;
+  /** ตัวคูณความเร็วเวลา (ทดสอบเท่านั้น) */
+  timeScale = 1;
+  skyState: SkyState = skyAt(this.gameTime);
   quality: QualityLevel = DEFAULT_QUALITY;
   private q: QualityPreset = QUALITY[DEFAULT_QUALITY];
   private hero: THREE.Object3D;
@@ -50,9 +59,8 @@ export class App {
 
     const t0 = performance.now();
     this.terrain = new Terrain();
-    const sky = new THREE.Color(0x9cc4dc);
-    this.scene.background = sky;
-    this.scene.fog = new THREE.FogExp2(0xb7cdd6, 0.0034);
+    this.scene.fog = this.fog;
+    this.scene.add(this.sky.mesh);
 
     this.hemi = new THREE.HemisphereLight(0xcfe3f2, 0x4a4a32, 1.1);
     this.scene.add(this.hemi);
@@ -145,6 +153,12 @@ export class App {
     this.render();
   }
 
+  /** ตัวช่วยทดสอบ: ตั้งเวลา (ชั่วโมง 0 ถึง 24) ของวันที่เท่านั้น */
+  setClock(hour: number, day = Math.floor(this.gameTime / DAY_SECONDS)): void {
+    this.gameTime = (day + hour / 24) * DAY_SECONDS;
+    this.advance(0.05);
+  }
+
   /** ตัวช่วยทดสอบ: วาร์ปไปจุดนั้น */
   teleport(x: number, z: number, heading = this.player.heading): void {
     this.player.place(x, z, heading);
@@ -163,6 +177,8 @@ export class App {
     this.input.setTime(this.elapsed);
     WIND.uTime.value = this.elapsed;
     this.water.update(dt);
+    this.gameTime += dt * this.timeScale;
+    this.skyState = skyAt(this.gameTime);
 
     const inp = this.input;
     this.rig.rotate(inp.mouseDX, inp.mouseDY);
@@ -189,12 +205,19 @@ export class App {
     this.vegetation.update(p.x, p.z);
     this.grass.update(p.x, p.z);
 
-    // แสงแดดกับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
+    this.sky.update(this.skyState, this.elapsed, this.camera, this.sun, this.hemi, this.fog);
+    // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
     const snap = 4;
     const sx = Math.round(p.x / snap) * snap;
     const sz = Math.round(p.z / snap) * snap;
+    const d = (this.sun.userData.dir as [number, number, number] | undefined) ?? this.skyState.sun;
     this.sun.target.position.set(sx, p.y, sz);
-    this.sun.position.set(sx + 90, p.y + 160, sz + 60);
+    this.sun.position.set(sx + d[0] * 180, p.y + Math.max(0.05, d[1]) * 180, sz + d[2] * 180);
+    const wu = this.water.uniforms;
+    wu.uSunDir.value.set(d[0], d[1], d[2]);
+    wu.uSunColor.value.copy(this.sun.color).multiplyScalar(Math.min(1, this.sun.intensity / 2));
+    wu.uSkyColor.value.copy(this.sky.horizon);
+    wu.uLight.value = 0.04 + 0.96 * this.sky.brightness;
     inp.endFrame();
   }
 

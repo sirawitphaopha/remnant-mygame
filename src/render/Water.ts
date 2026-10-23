@@ -20,6 +20,7 @@ const frag = /* glsl */ `
   uniform vec3 uSkyColor;
   uniform vec3 uDeep;
   uniform vec3 uShallow;
+  uniform float uLight;
   varying vec3 vWorld;
   #include <fog_pars_fragment>
 
@@ -38,7 +39,7 @@ const frag = /* glsl */ `
     float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
     vec3 r = reflect(-v, n);
     float spec = pow(max(dot(r, normalize(uSunDir)), 0.0), 180.0);
-    vec3 base = mix(uShallow, uDeep, 0.7);
+    vec3 base = mix(uShallow, uDeep, 0.7) * uLight;
     vec3 col = mix(base, uSkyColor * 0.85, 0.12 + 0.5 * fres) + uSunColor * spec * 1.4;
     gl_FragColor = vec4(col, 0.86 + 0.12 * fres);
     #include <tonemapping_fragment>
@@ -57,6 +58,8 @@ export class Water {
     uSkyColor: { value: new THREE.Color(0.6, 0.75, 0.88) },
     uDeep: { value: new THREE.Color(0.06, 0.16, 0.18) },
     uShallow: { value: new THREE.Color(0.17, 0.30, 0.27) },
+    /** ความสว่างรอบตัว 0 ถึง 1 (กลางคืนน้ำต้องมืดตาม) */
+    uLight: { value: 1 },
   };
 
   constructor() {
