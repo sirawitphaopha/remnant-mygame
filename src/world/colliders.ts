@@ -6,12 +6,22 @@ export interface Circle {
   r: number;
   /** สูงจากพื้นเท่าไร ตัวละครกระโดดข้ามของที่เตี้ยกว่านี้ได้ */
   top: number;
+  /** ยืนบนยอดได้ (หิน ขอนไม้ ตอไม้) · y0 = ความสูงพื้นที่โคน */
+  stand?: boolean;
+  y0?: number;
+  /** ใช้กันนับซ้ำตอนหา (ของหนึ่งชิ้นอยู่ได้หลายช่องตาราง) */
+  mark?: number;
 }
 
 const CELL = 16;
 
 export class CircleColliders {
   private grid = new Map<number, Circle[]>();
+  private stamp = 0;
+  // อาร์เรย์ใช้ซ้ำแยกต่อฟังก์ชัน (push เรียกหาพื้นซึ่งเรียก standAt ซ้อนอยู่ข้างใน ใช้อาร์เรย์เดียวกันจะทับกัน)
+  private scratchPush: Circle[] = [];
+  private scratchStand: Circle[] = [];
+  private scratchSeg: Circle[] = [];
 
   private key(i: number, j: number): number {
     return (i + 1000) * 4096 + (j + 1000);
@@ -35,6 +45,8 @@ export class CircleColliders {
   /** ของทั้งหมดที่อยู่ในรัศมี r รอบจุด */
   near(x: number, z: number, r: number, out: Circle[] = []): Circle[] {
     out.length = 0;
+    // กันนับซ้ำด้วยเลขรอบ (เดิม out.includes วนเทียบทุกชิ้นซ้ำ ช้าเมื่อของหนาแน่น)
+    const s = ++this.stamp;
     const i0 = Math.floor((x - r) / CELL);
     const i1 = Math.floor((x + r) / CELL);
     const j0 = Math.floor((z - r) / CELL);
@@ -43,10 +55,29 @@ export class CircleColliders {
       for (let i = i0; i <= i1; i++) {
         const list = this.grid.get(this.key(i, j));
         if (!list) continue;
-        for (const c of list) if (!out.includes(c) && (c.x - x) ** 2 + (c.z - z) ** 2 < (c.r + r) ** 2) out.push(c);
+        for (const c of list) {
+          if (c.mark === s) continue;
+          c.mark = s;
+          if ((c.x - x) ** 2 + (c.z - z) ** 2 < (c.r + r) ** 2) out.push(c);
+        }
       }
     }
     return out;
+  }
+
+  /**
+   * ยอดของสิ่งที่ยืนบนได้ (หิน ขอนไม้) ใต้จุดนี้ ถ้าเท้าสูงถึงยอดแล้ว · ไม่มีคืน -Infinity
+   * เดิมกระโดดขึ้นหินแล้วจมลงในหิน (พื้นไม่รู้จักยอดหิน) แล้วถูกดีดออก 1.2 ม. ในเฟรมเดียว
+   */
+  standAt(x: number, z: number, feetY: number): number {
+    let best = -Infinity;
+    for (const c of this.near(x, z, 0.1, this.scratchStand)) {
+      if (!c.stand || c.y0 === undefined) continue;
+      const topY = c.y0 + c.top;
+      if (feetY < topY - 0.35 || (c.x - x) ** 2 + (c.z - z) ** 2 > (c.r * 0.85) ** 2) continue;
+      if (topY > best) best = topY;
+    }
+    return best;
   }
 
   /**
@@ -55,7 +86,7 @@ export class CircleColliders {
    */
   push(x: number, z: number, r: number, feetAbove: (c: Circle) => number): { x: number; z: number; hit: boolean } {
     let hit = false;
-    for (const c of this.near(x, z, r + 0.5)) {
+    for (const c of this.near(x, z, r + 0.5, this.scratchPush)) {
       if (feetAbove(c) > c.top - 0.25) continue;
       const dx = x - c.x;
       const dz = z - c.z;
@@ -76,7 +107,7 @@ export class CircleColliders {
     const len = Math.hypot(bx - ax, bz - az);
     const midX = (ax + bx) / 2;
     const midZ = (az + bz) / 2;
-    for (const c of this.near(midX, midZ, len / 2 + pad)) {
+    for (const c of this.near(midX, midZ, len / 2 + pad, this.scratchSeg)) {
       const dx = bx - ax;
       const dz = bz - az;
       const fx = ax - c.x;

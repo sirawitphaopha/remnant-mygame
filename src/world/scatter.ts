@@ -1,11 +1,11 @@
 import { WORLD } from '../config/game';
-import { CAVES, RIVER, ROAD_WIDTH, SHIP, distToPolyline, distToRoads } from './layout';
-import { BIOME } from './terrainGen';
+import { CAVES, REGIONS, RIVER, ROAD_WIDTH, SHIP, distToPolyline, distToRoads } from './layout';
+import { BIOME, type BiomeId } from './terrainGen';
+import { ALL_TREE_KINDS, ORCHARD_ROWS, SPECIES_BY_ID, deadKindOf, pickSpecies, type TreeKind } from './trees';
 import { Simplex2, hash2 } from './noise';
 import { smooth, type Terrain } from './Terrain';
 
-export type TreeKind = 'pine' | 'oak' | 'birch' | 'dead';
-export const TREE_KINDS: TreeKind[] = ['pine', 'oak', 'birch', 'dead'];
+export type { TreeKind } from './trees';
 
 export interface Placed {
   x: number;
@@ -22,7 +22,6 @@ export interface TreeSet {
 }
 
 const forestNoise = new Simplex2(WORLD.seed + 101);
-const kindNoise = new Simplex2(WORLD.seed + 202);
 
 /**
  * ความหนาแน่นป่าพื้นฐานของแต่ละชนิดพื้นที่ (BIOME) · ป่าดิบชื้นกับป่าทึบแน่นสุด ทุ่งโล่งมีไม้เดี่ยวประปราย
@@ -65,38 +64,92 @@ export function canPlace(t: Terrain, x: number, z: number, maxSlope: number, roa
   return true;
 }
 
-/** ต้นไม้ทั้งแมพ · คำนวณครั้งเดียว ผลเดิมทุกครั้ง · ชนิดต้นตามชนิดพื้นที่ */
-export function scatterTrees(t: Terrain): TreeSet[] {
+/**
+ * ต้นไม้ทั้งแมพ 19 ชนิด + ต้นตาย · คำนวณครั้งเดียว ผลเดิมทุกครั้ง
+ * scale = ความสูงจริง ÷ 10 (โมเดลทุกชนิดปั้นสูง 10 ม.) · ชนิดตามชนิดพื้นที่ (ป่า 5 แบบ) · ป่าที่เคยเป็นไร่ปลูกเป็นแถว
+ * blocked = ที่ห้ามขึ้น (ในตึก) ส่งมาจากผู้เรียก
+ */
+export function scatterTrees(t: Terrain, blocked: (x: number, z: number) => boolean = () => false): TreeSet[] {
   const cell = 7;
-  const sets: Record<TreeKind, Placed[]> = { pine: [], oak: [], birch: [], dead: [] };
+  const sets = new Map<TreeKind, Placed[]>(ALL_TREE_KINDS.map((k) => [k, []]));
+  const add = (kind: TreeKind, x: number, z: number, height: number, rot: number) => {
+    sets.get(kind)!.push({ x, y: t.heightAt(x, z), z, rot, scale: height / 10 });
+  };
+  const pick = (b: BiomeId, x: number, z: number, r: number) => pickSpecies(b, r, distToPolyline(x, z, RIVER) < 30);
+  const deadChance = (b: BiomeId) => (b === BIOME.dense || b === BIOME.redwood ? 0.08 : b === BIOME.orchard ? 0.1 : 0.05);
   const n = Math.floor(WORLD.size / cell);
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const r1 = hash2(i, j, 1);
       const x = -WORLD.half + (i + 0.15 + 0.7 * hash2(i, j, 2)) * cell;
       const z = -WORLD.half + (j + 0.15 + 0.7 * hash2(i, j, 3)) * cell;
+      const b = t.biomeAt(x, z);
+      if (b === BIOME.orchard) continue; // ปลูกเป็นแถวข้างล่าง
       const dens = forestDensity(t, x, z);
       if (r1 > dens * 0.85) continue;
-      if (!canPlace(t, x, z, 0.32, 3)) continue;
-      const h = t.heightAt(x, z);
-      const b = t.biomeAt(x, z);
-      const k = kindNoise.noise(x / 90, z / 90);
-      const r2 = hash2(i, j, 4);
-      let scale = 0.75 + 0.6 * hash2(i, j, 6);
-      let kind: TreeKind;
-      if (r2 < 0.05) kind = 'dead';
-      else if (b === BIOME.redwood) { kind = 'pine'; scale *= 1.7; }
-      else if (b === BIOME.alpine || h > 300) kind = 'pine';
-      else if (b === BIOME.rainforest) { kind = 'oak'; scale *= 1.3; }
-      else if (b === BIOME.deciduous) kind = k > 0.1 ? 'birch' : 'oak';
-      else if (b === BIOME.wetland || b === BIOME.shore || distToPolyline(x, z, RIVER) < 40) kind = 'birch';
-      else if (b === BIOME.orchard) { kind = 'oak'; scale *= 0.7; }
-      else if (k > 0.25) kind = 'pine';
-      else kind = r2 < 0.55 ? 'oak' : 'pine';
-      sets[kind].push({ x, y: h, z, rot: hash2(i, j, 5) * Math.PI * 2, scale });
+      if (!canPlace(t, x, z, 0.32, 3) || blocked(x, z)) continue;
+      const sp = pick(b, x, z, hash2(i, j, 4));
+      const height = sp.height[0] + (sp.height[1] - sp.height[0]) * hash2(i, j, 6);
+      const kind = hash2(i, j, 7) < deadChance(b) ? deadKindOf(sp) : sp.id;
+      add(kind, x, z, kind === sp.id ? height : height * 0.75, hash2(i, j, 5) * Math.PI * 2);
     }
   }
-  return TREE_KINDS.map((kind) => ({ kind, items: sets[kind] }));
+  // ป่าที่เคยเป็นไร่: แถวแอปเปิลกับมะม่วงตามแนวปลูกเดิม บางต้นตาย บางช่องว่าง ไม้ป่าขึ้นแทรกระหว่างแถว
+  const { angle, along, across } = ORCHARD_ROWS;
+  const ca = Math.cos(angle);
+  const sa = Math.sin(angle);
+  const o = REGIONS.orchard;
+  const reach = Math.max(o.rx, o.rz) * 1.3;
+  // แถวเริ่มที่จุดศูนย์กลางสวนพอดี (ทุกแถวห่างเท่ากันจากกลางสวน)
+  for (let a = -Math.ceil(reach / along) * along; a <= reach; a += along) {
+    for (let c = -Math.ceil(reach / across) * across; c <= reach; c += across) {
+      const x = o.x + a * ca - c * sa;
+      const z = o.z + a * sa + c * ca;
+      if (t.biomeAt(x, z) !== BIOME.orchard) continue;
+      const ia = Math.round(a / along);
+      const ic = Math.round(c / across);
+      if (!canPlace(t, x, z, 0.32, 3) || blocked(x, z)) continue;
+      const r = hash2(ia, ic, 31);
+      if (r < 0.12) continue; // ต้นที่หายไปจากแถว
+      const sp = SPECIES_BY_ID.get(hash2(ia, ic, 32) < 0.75 ? 'apple' : 'mango')!;
+      // ต้นที่ปล่อยร้างสูงกว่าต้นปลูก กิ่งรก
+      const height = sp.height[0] + (sp.height[1] - sp.height[0]) * hash2(ia, ic, 33);
+      const kind = r < 0.2 ? deadKindOf(sp) : sp.id;
+      add(kind, x + (hash2(ia, ic, 34) - 0.5) * 0.8, z + (hash2(ia, ic, 35) - 0.5) * 0.8, height, hash2(ia, ic, 36) * Math.PI * 2);
+      // ไม้ป่าขึ้นแทรกกลางแถว (เบิร์ชเป็นไม้เบิกนำ)
+      if (hash2(ia, ic, 37) < 0.3) {
+        const mx = x - sa * across * 0.5;
+        const mz = z + ca * across * 0.5;
+        if (t.biomeAt(mx, mz) === BIOME.orchard && canPlace(t, mx, mz, 0.32, 3) && !blocked(mx, mz)) {
+          const w = pickSpecies(BIOME.orchard, hash2(ia, ic, 38), false);
+          add(w.id, mx, mz, w.height[0] + (w.height[1] - w.height[0]) * hash2(ia, ic, 39), hash2(ia, ic, 40) * 6.28);
+        }
+      }
+    }
+  }
+  return ALL_TREE_KINDS.map((kind) => ({ kind, items: sets.get(kind)! }));
+}
+
+/** ขอนไม้ล้ม ตอไม้ ต้นล้มทั้งราก (มีมอส) · ในป่าเท่านั้น */
+export type DebrisKind = 'log' | 'stump' | 'uprooted';
+export const DEBRIS_KINDS: DebrisKind[] = ['log', 'stump', 'uprooted'];
+export function scatterDebris(t: Terrain, blocked: (x: number, z: number) => boolean = () => false): Record<DebrisKind, Placed[]> {
+  const out: Record<DebrisKind, Placed[]> = { log: [], stump: [], uprooted: [] };
+  const cell = 16;
+  const n = Math.floor(WORLD.size / cell);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const x = -WORLD.half + (i + hash2(i, j, 51)) * cell;
+      const z = -WORLD.half + (j + hash2(i, j, 52)) * cell;
+      const dens = forestDensity(t, x, z);
+      if (dens < 0.45 || hash2(i, j, 53) > dens * 0.5) continue;
+      if (!canPlace(t, x, z, 0.25, 3) || blocked(x, z)) continue;
+      const r = hash2(i, j, 54);
+      const kind: DebrisKind = r < 0.55 ? 'log' : r < 0.85 ? 'stump' : 'uprooted';
+      out[kind].push({ x, y: t.heightAt(x, z), z, rot: hash2(i, j, 55) * Math.PI * 2, scale: 0.7 + 0.6 * hash2(i, j, 56) });
+    }
+  }
+  return out;
 }
 
 /** ก้อนหินทั้งแมพ · มากบนเนินชันกับภูเขา */

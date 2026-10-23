@@ -1,6 +1,7 @@
 import { WORLD } from '../config/game';
 import type { SlopeGround } from '../player/Player';
 import { caveAt, type Cave } from '../world/caves';
+import type { CircleColliders } from '../world/colliders';
 import type { Structures } from '../world/structures';
 import type { Terrain } from '../world/Terrain';
 
@@ -11,7 +12,7 @@ import type { Terrain } from '../world/Terrain';
 export class WorldGround implements SlopeGround {
   contextY = Infinity;
 
-  constructor(private terrain: Terrain, private structures: Structures, private caves: Cave[]) {}
+  constructor(private terrain: Terrain, private structures: Structures, private caves: Cave[], private colliders?: CircleColliders) {}
 
   /** อยู่ระดับพื้นถ้ำตรงนั้นไหม */
   private cave(x: number, z: number, y: number) {
@@ -26,7 +27,9 @@ export class WorldGround implements SlopeGround {
     if (c) return c.floor;
     const t = this.terrain.heightAt(x, z);
     const s = this.structures.floorAt(x, z, Math.max(y, t));
-    return Math.max(t, s);
+    // ยืนบนหิน ขอนไม้ ตอไม้ได้
+    const r = this.colliders && y !== Infinity ? this.colliders.standAt(x, z, y) : -Infinity;
+    return Math.max(t, s, r);
   }
 
   /** พื้นใต้จุดนี้ ณ ความสูง y (วางซาก กระเป๋า หมึก ให้อยู่ชั้นเดียวกับที่อยู่จริง ทั้งในถ้ำและบนหลังคา) */

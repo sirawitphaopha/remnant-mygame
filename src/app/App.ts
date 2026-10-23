@@ -51,6 +51,7 @@ import { NatureAudio, type Surface } from '../audio/NatureAudio';
 import { clearSave, readOldSave, readSave, readSettings, storedSavedAt, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
 import { SettingsScreen, TitleScreen } from '../ui/Menus';
 import { forestDensity } from '../world/scatter';
+import { scanKindOf, trunkRadius } from '../world/trees';
 import { LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from '../world/layout';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
@@ -84,6 +85,8 @@ export class App {
   readonly hero = new HeroModel();
   readonly colliders = new CircleColliders();
   private camWorld: CameraWorld | null = null;
+  private lastCull = -1;
+  private townView!: Town;
   /** เพิ่งย้ายบันทึกจากโลก 1 กม. มาโลกใหม่ (หน้าแรกบอกคนเล่น) */
   private worldMoved = false;
   /** ของที่พกอยู่ แถบล่าง 9 ช่อง และแขน 4 ข้าง */
@@ -192,7 +195,10 @@ export class App {
     this.scene.add(this.terrainMesh.group);
     this.water = new Water();
     this.scene.add(this.water.mesh);
-    this.vegetation = new Vegetation(this.terrain, this.q);
+    // เมืองวางก่อนป่า ต้นไม้กับขอนไม้จะไม่ขึ้นในตึก (เดิมต้นไม้ 7 ต้นขึ้นในตึก ลำต้นทะลุหลังคา)
+    this.town = buildTown(this.terrain, this.structures);
+    const inBuilding = (x: number, z: number) => this.town.buildings.some((b) => Math.abs(x - b.x) < b.w / 2 + 6 && Math.abs(z - b.z) < b.d / 2 + 6 && Math.hypot(x - b.x, z - b.z) < Math.hypot(b.w, b.d) / 2 + 2);
+    this.vegetation = new Vegetation(this.terrain, this.q, inBuilding);
     this.scene.add(this.vegetation.group);
     this.grass = new Grass(this.terrain, this.terrainMesh, this.q);
     this.scene.add(this.grass.mesh);
@@ -200,19 +206,33 @@ export class App {
 
     this.scene.add(this.hero.root);
     // ลำต้นไม้กับก้อนหินเป็นสิ่งกีดขวาง
+    // ลำต้นชนตามขนาดจริงของแต่ละชนิด (scale = ความสูง ÷ 10)
     for (const set of this.vegetation.trees) {
-      const r = set.kind === 'oak' ? 0.42 : set.kind === 'dead' ? 0.32 : set.kind === 'pine' ? 0.3 : 0.2;
-      for (const t of set.items) this.colliders.add({ x: t.x, z: t.z, r: r * t.scale, top: 8 });
+      for (const t of set.items) this.colliders.add({ x: t.x, z: t.z, r: trunkRadius(set.kind, t.scale * 10), top: t.scale * 10 });
     }
-    for (const r of this.vegetation.rocks) this.colliders.add({ x: r.x, z: r.z, r: 1.05 * r.scale, top: 0.75 * r.scale });
+    for (const r of this.vegetation.rocks) this.colliders.add({ x: r.x, z: r.z, r: 1.05 * r.scale, top: 0.75 * r.scale, stand: true, y0: r.y });
+    // ขอนไม้ล้ม (วงกลมเรียงตามท่อน) ตอไม้ ต้นล้มทั้งราก · ยืนบนได้ กระโดดข้ามได้
+    for (const kind of ['log', 'stump', 'uprooted'] as const) {
+      for (const d of this.vegetation.debris[kind]) {
+        const fx = Math.cos(d.rot);
+        const fz = -Math.sin(d.rot);
+        const s = d.scale;
+        if (kind === 'stump') this.colliders.add({ x: d.x, z: d.z, r: 0.5 * s, top: 0.76 * s, stand: true, y0: d.y });
+        else if (kind === 'log') for (const o of [-2.6, -0.9, 0.9, 2.6]) this.colliders.add({ x: d.x + fx * o * s, z: d.z + fz * o * s, r: 0.4 * s, top: 0.72 * s, stand: true, y0: d.y });
+        else {
+          this.colliders.add({ x: d.x - fx * 0.3 * s, z: d.z - fz * 0.3 * s, r: 1.3 * s, top: 2.4 * s });
+          for (const o of [1.5, 3.5, 5.5, 7.5]) this.colliders.add({ x: d.x + fx * o * s, z: d.z + fz * o * s, r: 0.36 * s, top: 0.8 * s, stand: true, y0: d.y });
+        }
+      }
+    }
 
     this.caves = buildCaves(this.terrain);
-    this.town = buildTown(this.terrain, this.structures);
-    this.scene.add(new Town(this.town.buildings, this.town.bridge).group);
+    this.townView = new Town(this.town.buildings, this.town.bridge);
+    this.scene.add(this.townView.group);
     this.cavesView = new Caves(this.caves);
     this.scene.add(this.cavesView.group);
     this.cavesView.cutTerrain(this.terrainMesh.material);
-    this.worldGround = new WorldGround(this.terrain, this.structures, this.caves);
+    this.worldGround = new WorldGround(this.terrain, this.structures, this.caves, this.colliders);
     this.gasAt = (x, y, z) => {
       const c = caveAt(this.caves, x, z);
       return !!c && c.f >= c.cave.gasFrom && y < c.floor + 4;
@@ -677,7 +697,7 @@ export class App {
       if (c > bestCos) { bestCos = c; best = { key, kind, x, y, z }; }
     };
     this.vegetation.trees.forEach((set) => set.items.forEach((it) => {
-      if (Math.abs(it.x - p.x) < 30 && Math.abs(it.z - p.z) < 30) test(`tree-${set.kind}@${Math.round(it.x)},${Math.round(it.z)}`, set.kind, it.x, it.y + 2.5 * it.scale, it.z);
+      if (Math.abs(it.x - p.x) < 30 && Math.abs(it.z - p.z) < 30) test(`tree-${set.kind}@${Math.round(it.x)},${Math.round(it.z)}`, scanKindOf(set.kind), it.x, it.y + 2.5 * it.scale, it.z);
     }));
     this.vegetation.rocks.forEach((r) => {
       if (Math.abs(r.x - p.x) < 30 && Math.abs(r.z - p.z) < 30) test(`rock@${Math.round(r.x)},${Math.round(r.z)}`, 'rock', r.x, r.y + 0.4 * r.scale, r.z);
@@ -1015,6 +1035,7 @@ export class App {
     this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
     this.vegetation.update(p.x, p.z);
     this.grass.update(p.x, p.z);
+    this.cullFar(p.x, p.z);
 
     this.explore.reveal(p.x, p.z);
     this.updateInteract();
@@ -1080,6 +1101,22 @@ export class App {
       status: this.statusChips(),
       shoulder: this.rig.side,
     }, this.elapsed);
+  }
+
+  /**
+   * ซ่อนของที่ไกลเกินมองเห็น (ทุก 0.5 วินาที) · แมพ 3 กม. ตึก รถ เสาไฟ ป้าย ของชิ้นเล็ก ราว 950 ชิ้น
+   * เดิมวาดทุกชิ้นทุกเฟรมแม้อยู่ห่าง 1.5 กม. (ครั้งวาดขึ้นถึง 1,144 ครั้งต่อภาพ) · ช่วง 8 รวมชิ้นตึกใหม่ทั้งเมือง
+   */
+  private cullFar(x: number, z: number): void {
+    if (this.elapsed - this.lastCull < 0.5) return;
+    this.lastCull = this.elapsed;
+    const near = (o: THREE.Object3D, r: number) => (o.position.x - x) ** 2 + (o.position.z - z) ** 2 < r * r;
+    for (const pp of this.props.all) {
+      if (pp.taken) continue;
+      const big = pp.prop.kind === 'car' || pp.prop.kind === 'bus' || pp.prop.kind === 'lamp' || pp.prop.kind === 'sign' || pp.prop.kind === 'mailbox';
+      pp.object.visible = near(pp.object, big ? 650 : 140);
+    }
+    for (const g of this.townView.group.children) g.visible = near(g, 1300);
   }
 
   /** ป้ายสถานะค้าง: บอกสิ่งที่กำลังทำร้ายร่างกายอยู่ และวิธีแก้ */
