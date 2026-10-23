@@ -43,7 +43,7 @@ export class Vegetation {
     this.rocks = scatterRocks(terrain);
 
     const leafMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    addWind(leafMat, 0.35, 0.2);
+    addWind(leafMat, 0.35, 0.2, false, 3.2);
     for (const set of this.trees) {
       const near = new THREE.InstancedMesh(treeGeometry(set.kind, 'near'), leafMat, set.items.length);
       const far = new THREE.InstancedMesh(treeGeometry(set.kind, 'far'), leafMat, set.items.length);
@@ -71,7 +71,7 @@ export class Vegetation {
     }
 
     const plantMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-    addWind(plantMat, 0.06, 0.4, true);
+    addWind(plantMat, 0.06, 0.4, true, 1.6);
     for (const kind of PLANT_KINDS) {
       const mesh = new THREE.InstancedMesh(plantGeometry(kind), plantMat, 9000);
       mesh.count = 0;

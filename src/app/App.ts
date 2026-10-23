@@ -3,8 +3,10 @@ import { DEFAULT_QUALITY, QUALITY, type QualityLevel, type QualityPreset } from 
 import { DAY_SECONDS, START_TIME, skyAt, type SkyState } from '../core/time';
 import { SPAWN_POINT } from '../world/layout';
 import { Terrain } from '../world/Terrain';
+import { CircleColliders } from '../world/colliders';
 import { Player } from '../player/Player';
 import { CameraRig } from '../render/CameraRig';
+import { HeroModel } from '../render/models/hero';
 import { Sky } from '../render/Sky';
 import { Grass } from '../render/Grass';
 import { TerrainMesh } from '../render/TerrainMesh';
@@ -37,7 +39,14 @@ export class App {
   skyState: SkyState = skyAt(this.gameTime);
   quality: QualityLevel = DEFAULT_QUALITY;
   private q: QualityPreset = QUALITY[DEFAULT_QUALITY];
-  private hero: THREE.Object3D;
+  readonly hero = new HeroModel();
+  readonly colliders = new CircleColliders();
+  /** ถือที่ปีนป่ายอยู่ไหม (ช่วง 5 ผูกกับอุปกรณ์จริง) */
+  climbGear = true;
+  /** กำลังเล็งหรือสแกน (กล้องซูมชิดไหล่) */
+  aiming = false;
+  /** น้ำหนักที่แบก ÷ ที่รับได้ (ช่วง 6 ผูกกับกระเป๋า) */
+  loadRatio = 0;
   private clock = new THREE.Clock();
   private elapsed = 0;
   /** หยุดลูปจริงไว้ ใช้ตอนทดสอบด้วย advance() */
@@ -85,14 +94,15 @@ export class App {
     this.scene.add(this.grass.mesh);
     this.loadMs = Math.round(performance.now() - t0);
 
-    this.hero = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.35, 1.1, 6, 12).translate(0, 0.9, 0),
-      new THREE.MeshStandardMaterial({ color: 0xd6d8d2 }),
-    );
-    this.hero.castShadow = true;
-    this.scene.add(this.hero);
+    this.scene.add(this.hero.root);
+    // ลำต้นไม้กับก้อนหินเป็นสิ่งกีดขวาง
+    for (const set of this.vegetation.trees) {
+      const r = set.kind === 'oak' ? 0.42 : set.kind === 'dead' ? 0.32 : set.kind === 'pine' ? 0.3 : 0.2;
+      for (const t of set.items) this.colliders.add({ x: t.x, z: t.z, r: r * t.scale, top: 8 });
+    }
+    for (const r of this.vegetation.rocks) this.colliders.add({ x: r.x, z: r.z, r: 1.05 * r.scale, top: 0.75 * r.scale });
 
-    this.player = new Player(this.terrain);
+    this.player = new Player(this.terrain, this.colliders);
     this.player.place(SPAWN_POINT.x, SPAWN_POINT.z, SPAWN_POINT.heading);
     this.rig = new CameraRig(this.camera);
     this.rig.snap(this.player);
@@ -195,12 +205,16 @@ export class App {
       z: mz,
       run: inp.isDown('ShiftLeft') || inp.isDown('ShiftRight'),
       jump: inp.wasPressed('Space'),
+      climbGear: this.climbGear,
+      loadRatio: this.loadRatio,
     });
+    if (inp.wasPressed('KeyV')) this.rig.swapShoulder();
 
     const p = this.player;
-    this.hero.position.set(p.x, p.y, p.z);
-    this.hero.rotation.y = p.heading;
-    this.rig.update(dt, p);
+    this.hero.root.position.set(p.x, p.y, p.z);
+    this.hero.root.rotation.y = p.heading;
+    this.hero.pose(dt, p.sliding ? 'air' : p.state, p.stepPhase, p.speed, p.running, this.elapsed);
+    this.rig.update(dt, p, { heightAt: (x, z) => this.terrain.heightAt(x, z), colliders: this.colliders }, this.aiming, this.elapsed - inp.lastMouseMove);
     this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
     this.vegetation.update(p.x, p.z);
     this.grass.update(p.x, p.z);

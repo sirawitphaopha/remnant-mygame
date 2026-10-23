@@ -11,9 +11,25 @@ export const WIND = {
  * ใส่การไหวตามลมให้วัสดุ · ต้องมี attribute `sway` (0 = ไม่ขยับ 1 = ขยับเต็ม)
  * amount คือระยะไหวสูงสุดเป็นเมตร · ใช้ตำแหน่งในโลกของแต่ละต้นให้ไหวไม่พร้อมกัน
  */
-export function addWind(mat: THREE.Material, amount: number, flutter = 0.3, keepNormalBothSides = false): void {
+export function addWind(mat: THREE.Material, amount: number, flutter = 0.3, keepNormalBothSides = false, fadeNearCamera = 0): void {
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, WIND);
+    // ใบไม้ที่อยู่ชิดกล้องค่อย ๆ จางเป็นจุด ๆ กล้องไม่จมในพุ่มไม้ (แบบ RDR2)
+    if (fadeNearCamera > 0) {
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
+      varying vec3 vFadeWorld;`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+        varying vec3 vFadeWorld;`)
+        .replace(
+          '#include <clipping_planes_fragment>',
+          `#include <clipping_planes_fragment>
+          float fadeD = distance(vFadeWorld, cameraPosition);
+          float fadeA = smoothstep(${(fadeNearCamera * 0.45).toFixed(2)}, ${fadeNearCamera.toFixed(2)}, fadeD);
+          float dith = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453);
+          if (fadeA < dith) discard;`,
+        );
+    }
     // ใบไม้บาง ๆ สองหน้า: ไม่กลับทิศแสงด้านหลัง ไม่งั้นด้านหลังจะดำ
     if (keepNormalBothSides) shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
       normal = normalize( vNormal );`);
@@ -33,6 +49,7 @@ export function addWind(mat: THREE.Material, amount: number, flutter = 0.3, keep
           mvPosition = instanceMatrix * mvPosition;
         #endif
         vec4 wpos = modelMatrix * mvPosition;
+        ${fadeNearCamera > 0 ? 'vFadeWorld = wpos.xyz;' : ''}
         float phase = wpos.x * 0.11 + wpos.z * 0.07;
         float gust = 0.55 + 0.45 * sin(uTime * 0.35 + wpos.x * 0.013 + wpos.z * 0.009);
         float w = (sin(uTime * 1.6 + phase) * 0.6 + sin(uTime * 2.7 + phase * 2.3) * 0.25) * gust * uWindStrength;
@@ -44,5 +61,5 @@ export function addWind(mat: THREE.Material, amount: number, flutter = 0.3, keep
         gl_Position = projectionMatrix * mvPosition;`,
       );
   };
-  mat.customProgramCacheKey = () => `wind-${amount}-${flutter}-${keepNormalBothSides}`;
+  mat.customProgramCacheKey = () => `wind-${amount}-${flutter}-${keepNormalBothSides}-${fadeNearCamera}`;
 }
