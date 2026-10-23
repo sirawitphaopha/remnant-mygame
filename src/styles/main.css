@@ -1,0 +1,19 @@
+:root {
+  --holo: #6ff0e0;
+  --holo-soft: rgba(111, 240, 224, .14);
+  --holo-line: rgba(111, 240, 224, .45);
+  --holo-dim: rgba(111, 240, 224, .7);
+  --ink: #e9f4f2;
+  --ink-dim: rgba(233, 244, 242, .62);
+  --warn: #ffb35c;
+  --danger: #ff5a5a;
+  --font-ui: "Chakra Petch", "Sarabun", sans-serif;
+  --font-body: "Sarabun", sans-serif;
+  --font-num: "Roboto Mono", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--ink); font-family: var(--font-ui); }
+#game { position: fixed; inset: 0; }
+#game canvas { display: block; width: 100%; height: 100%; }
+#ui { position: fixed; inset: 0; pointer-events: none; }
+#ui .interactive { pointer-events: auto; }

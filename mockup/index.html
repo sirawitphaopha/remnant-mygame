@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ร่องรอย · มอคอัปหน้าจอ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --holo: #6ff0e0;
+    --holo-soft: rgba(111, 240, 224, .14);
+    --holo-line: rgba(111, 240, 224, .45);
+    --holo-dim: rgba(111, 240, 224, .7);
+    --ink: #e9f4f2;
+    --ink-dim: rgba(233, 244, 242, .62);
+    --warn: #ffb35c;
+    --danger: #ff5a5a;
+    --page: #07100f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font-family: "Chakra Petch", sans-serif;
+    padding: 28px 16px 60px;
+  }
+  .page-head { max-width: 1400px; margin: 0 auto 18px; }
+  .page-head h1 { margin: 0 0 4px; font-size: 26px; font-weight: 600; letter-spacing: .02em; }
+  .page-head p { margin: 0; color: var(--ink-dim); font-size: 15px; line-height: 1.7; }
+
+  .shot { max-width: 1400px; margin: 0 auto 34px; }
+  .shot-label { display: flex; gap: 10px; align-items: baseline; margin: 0 0 8px; }
+  .shot-label b { color: var(--holo); font-size: 18px; font-weight: 600; }
+  .shot-label span { color: var(--ink-dim); font-size: 14px; }
+
+  /* ===== กรอบจอเกม 16:9 ทุกขนาดคิดเป็น cqw (1cqw = 1% ของความกว้างจอ) ===== */
+  .frame {
+    position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden;
+    container-type: inline-size; border-radius: 6px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 20px 50px rgba(0,0,0,.5);
+    background: linear-gradient(180deg, var(--sky1, #000), var(--sky2, #000) 70%);
+  }
+  .frame > svg.scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  /* ชุดสีฉาก */
+  .t-day   { --sky1:#7fb4d6; --sky2:#d9e6e0; --sun:#fff6d8; --mf:#9fb4bf; --mm:#6f8b84; --mn:#3e5a46; --gr:#4d6b3c; --gr2:#3a5530; --ruin:#5d6660; --vine:#365a34; --cloud:#ffffff; --star:0; --haze:.35; }
+  .t-dusk  { --sky1:#2c3e63; --sky2:#e9a77a; --sun:#ffd2a0; --mf:#6c6e88; --mm:#4b5068; --mn:#2d3442; --gr:#2f3a31; --gr2:#232c26; --ruin:#3a3d45; --vine:#253526; --cloud:#f3c5a8; --star:.4; --haze:.3; }
+  .t-night { --sky1:#050a18; --sky2:#1b2742; --sun:#dfe8ff; --mf:#1d2840; --mm:#141d30; --mn:#0d1422; --gr:#0d1719; --gr2:#091113; --ruin:#141b24; --vine:#0d1a16; --cloud:#3a4766; --star:1; --haze:.15; }
+
+  /* ===== ส่วนบนจอระหว่างเล่น (เรียบ โปร่ง) ===== */
+  .hud { position: absolute; inset: 0; pointer-events: none; }
+  .hud * { pointer-events: auto; }
+
+  .compass {
+    position: absolute; top: 2.2cqw; left: 50%; transform: translateX(-50%);
+    width: 34cqw; height: 2.6cqw; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 1cqw; font-size: 1.05cqw; color: rgba(255,255,255,.85);
+    border-top: 1px solid rgba(255,255,255,.35); border-bottom: 1px solid rgba(255,255,255,.12);
+    background: linear-gradient(90deg, transparent, rgba(0,0,0,.22) 20%, rgba(0,0,0,.22) 80%, transparent);
+    text-shadow: 0 1px 2px rgba(0,0,0,.6);
+  }
+  .compass .tick { opacity: .45; }
+  .compass .n { color: var(--holo); font-weight: 700; font-size: 1.3cqw; }
+  .compass::after {
+    content: ""; position: absolute; left: 50%; bottom: -0.7cqw; transform: translateX(-50%);
+    border: .5cqw solid transparent; border-bottom-color: var(--holo); border-top: 0;
+  }
+
+  .minimap {
+    position: absolute; top: 2cqw; right: 2cqw; width: 13cqw; height: 13cqw; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.35); overflow: hidden;
+    background: rgba(5,12,12,.55); box-shadow: 0 0 0 .35cqw rgba(0,0,0,.25);
+  }
+  .minimap svg { width: 100%; height: 100%; display: block; }
+  .minimap-key { position: absolute; top: 15.4cqw; right: 2cqw; width: 13cqw; text-align: center; font-size: .9cqw; color: rgba(255,255,255,.7); text-shadow: 0 1px 2px #000; }
+
+  .bars { position: absolute; left: 2cqw; bottom: 2.2cqw; display: grid; gap: .7cqw; width: 17cqw; }
+  .bar { display: grid; grid-template-columns: 5.6cqw 1fr; align-items: center; gap: .7cqw; font-size: .95cqw; color: rgba(255,255,255,.85); text-shadow: 0 1px 2px #000; }
+  .bar .track { height: .55cqw; background: rgba(255,255,255,.15); border-radius: 1cqw; overflow: hidden; }
+  .bar .fill { height: 100%; border-radius: 1cqw; background: #f3f6f0; }
+  .bar.o2 .fill { background: #7fd7ff; }
+  .bar.bat .fill { background: #ffe07a; }
+  .bar.low .fill { background: var(--warn); }
+  .bar .note { grid-column: 2; font-size: .8cqw; color: rgba(255,255,255,.6); margin-top: -.3cqw; }
+
+  /* แถบล่าง 9 ช่อง + ช่องแขน 4 ช่อง */
+  .belt { position: absolute; left: 50%; bottom: 1.8cqw; transform: translateX(-50%); display: grid; justify-items: center; gap: .8cqw; }
+  .arms { display: flex; gap: .6cqw; }
+  .arm {
+    display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .5cqw;
+    min-width: 9.4cqw; padding: .45cqw .7cqw; border-radius: .4cqw;
+    background: rgba(0,0,0,.38); border: 1px solid rgba(255,255,255,.16); font-size: .85cqw;
+  }
+  .arm kbd {
+    font-family: inherit; font-size: .78cqw; font-weight: 700; padding: .1cqw .4cqw; border-radius: .25cqw;
+    background: rgba(255,255,255,.88); color: #102020; white-space: nowrap;
+  }
+  .arm .what { color: #fff; line-height: 1.25; }
+  .arm .what small { display: block; color: rgba(255,255,255,.55); font-size: .72cqw; }
+  .arm.main { border-color: var(--holo); box-shadow: 0 0 .8cqw rgba(111,240,224,.25); }
+  .hotbar { display: flex; gap: .4cqw; }
+  .slot {
+    position: relative; width: 4.4cqw; height: 4.4cqw; border-radius: .4cqw;
+    background: rgba(0,0,0,.38); border: 1px solid rgba(255,255,255,.18);
+    display: grid; place-items: center; font-size: 1.9cqw; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .slot:hover { background: rgba(111,240,224,.16); border-color: var(--holo-dim); }
+  .slot .num { position: absolute; top: .15cqw; left: .35cqw; font-size: .72cqw; color: rgba(255,255,255,.7); }
+  .slot .name { position: absolute; bottom: -1.5cqw; left: 50%; transform: translateX(-50%); font-size: .68cqw; color: rgba(255,255,255,.75); white-space: nowrap; text-shadow: 0 1px 2px #000; }
+  .slot.inarm { border-color: var(--holo); }
+  .slot.inarm::after { content: ""; position: absolute; top: .25cqw; right: .3cqw; width: .5cqw; height: .5cqw; border-radius: 50%; background: var(--holo); }
+  .slot.empty { opacity: .55; }
+  .belt-legend { font-size: .78cqw; color: rgba(255,255,255,.6); margin-top: 1.3cqw; text-shadow: 0 1px 2px #000; }
+
+  /* ตัวละคร */
+  .hero { position: absolute; left: 50%; bottom: 13.5cqw; width: 9cqw; transform: translateX(-50%); }
+
+  /* เป้าเล็ง + กล่องผลสแกน */
+  .reticle { position: absolute; width: 7cqw; height: 7cqw; border: 1px dashed var(--holo); border-radius: 50%; }
+  .reticle::before, .reticle::after { content: ""; position: absolute; background: var(--holo); }
+  .reticle::before { left: 50%; top: -0.6cqw; width: 1px; height: 1.2cqw; }
+  .reticle::after { top: 50%; left: -0.6cqw; height: 1px; width: 1.2cqw; }
+  .scan-card {
+    position: absolute; width: 25cqw; padding: 1.1cqw 1.3cqw 1.2cqw; border-radius: .5cqw;
+    background: linear-gradient(160deg, rgba(8,30,30,.82), rgba(4,16,18,.78));
+    border: 1px solid var(--holo-line); box-shadow: 0 0 2cqw rgba(111,240,224,.12);
+    font-size: .95cqw; line-height: 1.6;
+  }
+  .scan-card .kind { color: var(--holo); font-size: .8cqw; letter-spacing: .08em; }
+  .scan-card h3 { margin: .1cqw 0 .6cqw; font-size: 1.5cqw; font-weight: 600; }
+  .scan-card h3 small { font-size: .9cqw; color: var(--ink-dim); font-weight: 400; margin-left: .5cqw; }
+  .layer { padding: .5cqw 0 .5cqw .9cqw; border-left: 2px solid rgba(111,240,224,.35); margin-bottom: .5cqw; }
+  .layer .lt { display: block; font-size: .75cqw; color: var(--holo-dim); }
+  .layer.locked { color: rgba(255,255,255,.4); border-left-color: rgba(255,255,255,.15); }
+  .layer.locked .lt { color: rgba(255,255,255,.4); }
+  .layer.personal { font-style: italic; }
+  .progress-dots { display: inline-flex; gap: .3cqw; margin-left: .4cqw; vertical-align: middle; }
+  .progress-dots i { width: .55cqw; height: .55cqw; border-radius: 50%; background: rgba(255,255,255,.25); }
+  .progress-dots i.on { background: var(--holo); }
+
+  .prompt {
+    position: absolute; display: flex; align-items: center; gap: .6cqw; font-size: 1cqw;
+    padding: .45cqw .8cqw; background: rgba(0,0,0,.5); border-radius: .4cqw; border: 1px solid rgba(255,255,255,.2);
+  }
+  .prompt kbd { font-family: inherit; font-weight: 700; font-size: .85cqw; padding: .1cqw .45cqw; border-radius: .25cqw; background: #fff; color: #102020; }
+  .toast-scan { position: absolute; left: 2cqw; top: 2.2cqw; font-size: .95cqw; color: rgba(255,255,255,.85); text-shadow: 0 1px 2px #000; line-height: 1.7; }
+  .toast-scan b { color: var(--holo); font-weight: 600; }
+
+  /* สภาพร่างกาย: บาดเจ็บ หนาว */
+  .hurt { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,20,30,.32) 100%); }
+  .frost { position: absolute; inset: 0; background:
+      radial-gradient(ellipse at center, transparent 58%, rgba(210,235,255,.35) 82%, rgba(235,248,255,.7) 100%); }
+  .crack { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .status-chip {
+    position: absolute; font-size: .9cqw; padding: .35cqw .7cqw; border-radius: .3cqw;
+    background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.85);
+  }
+  .flashlight { position: absolute; inset: 0; background: radial-gradient(ellipse 22cqw 14cqw at 58% 58%, rgba(255,244,210,.28), transparent 70%); mix-blend-mode: screen; }
+
+  /* ===== หน้าโฮโลแกรม (ยาน กระเป๋า คอลเลกชัน แผนที่ ตั้งค่า) ===== */
+  .dim { position: absolute; inset: 0; background: rgba(2,10,12,.72); backdrop-filter: blur(3px); }
+  .holo {
+    position: absolute; inset: 3.5cqw 4cqw; border-radius: .8cqw;
+    border: 1px solid var(--holo-line);
+    background:
+      repeating-linear-gradient(0deg, rgba(111,240,224,.035) 0 1px, transparent 1px 4px),
+      linear-gradient(160deg, rgba(10,40,42,.72), rgba(4,18,22,.8));
+    box-shadow: inset 0 0 4cqw rgba(111,240,224,.06), 0 0 3cqw rgba(111,240,224,.1);
+    padding: 2cqw 2.4cqw; display: flex; flex-direction: column; gap: 1.4cqw;
+  }
+  .holo-head { display: flex; align-items: center; gap: 1.4cqw; }
+  .holo-head h2 { margin: 0; font-size: 2cqw; font-weight: 600; color: var(--holo); letter-spacing: .04em; }
+  .holo-head .sub { color: var(--ink-dim); font-size: 1cqw; }
+  .holo-head .spacer { flex: 1; }
+  .tabs { display: flex; gap: .5cqw; }
+  .tab {
+    font: inherit; font-size: 1.05cqw; color: var(--ink-dim); background: transparent; cursor: pointer;
+    border: 1px solid rgba(111,240,224,.25); padding: .45cqw 1.2cqw; border-radius: .35cqw;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .tab:hover { background: rgba(111,240,224,.1); color: var(--ink); border-color: var(--holo-line); }
+  .tab.on { background: rgba(111,240,224,.18); color: var(--holo); border-color: var(--holo); }
+  .tab.on:hover { background: rgba(111,240,224,.26); }
+
+  .btn {
+    font: inherit; font-size: 1.1cqw; font-weight: 500; cursor: pointer; border-radius: .4cqw;
+    padding: .65cqw 1.5cqw; min-width: 9cqw; color: var(--ink);
+    background: rgba(111,240,224,.08); border: 1px solid var(--holo-line);
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .btn:hover { background: rgba(111,240,224,.2); border-color: var(--holo); }
+  .btn.primary { background: var(--holo); color: #062220; border-color: var(--holo); font-weight: 600; }
+  .btn.primary:hover { background: #a2fff2; border-color: #a2fff2; }
+  .btn kbd { font-family: inherit; font-size: .8cqw; opacity: .7; margin-left: .5cqw; }
+
+  .cols { display: grid; gap: 1.6cqw; flex: 1; min-height: 0; }
+  .panel { border: 1px solid rgba(111,240,224,.22); border-radius: .5cqw; padding: 1.1cqw 1.2cqw; background: rgba(0,0,0,.18); min-height: 0; }
+  .panel h4 { margin: 0 0 .8cqw; font-size: 1.05cqw; font-weight: 500; color: var(--holo-dim); letter-spacing: .05em; }
+
+  .stock { display: grid; gap: .5cqw; font-size: .98cqw; }
+  .stock-row {
+    display: grid; grid-template-columns: 2.2cqw 1fr 6.5cqw 4.2cqw; align-items: center; gap: .7cqw;
+    padding: .45cqw .6cqw; border-radius: .35cqw; border: 1px solid transparent; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .stock-row:hover { background: rgba(111,240,224,.1); border-color: rgba(111,240,224,.3); }
+  .stock-row .ic { font-size: 1.5cqw; text-align: center; }
+  .stock-row .w { color: var(--ink-dim); text-align: right; font-size: .9cqw; }
+  .stock-row small { display: block; color: var(--ink-dim); font-size: .78cqw; }
+  .meter { height: .45cqw; background: rgba(255,255,255,.12); border-radius: 1cqw; overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--holo); }
+  .stock-row.taken { background: rgba(111,240,224,.07); }
+
+  .weight-big { font-size: 2.6cqw; font-weight: 600; }
+  .weight-big small { font-size: 1.2cqw; color: var(--ink-dim); font-weight: 400; }
+  .wbar { height: .8cqw; border-radius: 1cqw; background: rgba(255,255,255,.12); overflow: hidden; margin: .6cqw 0 .4cqw; display: flex; }
+  .wbar .a { background: var(--holo); }
+  .wbar .b { background: #c7a5ff; }
+  .legend { display: flex; gap: 1.2cqw; font-size: .82cqw; color: var(--ink-dim); flex-wrap: wrap; }
+  .legend i { display: inline-block; width: .7cqw; height: .7cqw; border-radius: 2px; margin-right: .35cqw; vertical-align: middle; }
+
+  .grid-slots { display: grid; grid-template-columns: repeat(5, 1fr); gap: .6cqw; }
+  .gslot {
+    aspect-ratio: 1; border-radius: .4cqw; border: 1px solid rgba(111,240,224,.25); background: rgba(0,0,0,.25);
+    display: grid; place-items: center; position: relative; font-size: 2cqw; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .gslot:hover { background: rgba(111,240,224,.14); border-color: var(--holo); }
+  .gslot .kg { position: absolute; bottom: .2cqw; right: .35cqw; font-size: .7cqw; color: var(--ink-dim); }
+  .gslot .tag { position: absolute; top: .2cqw; left: .35cqw; font-size: .68cqw; color: var(--holo-dim); }
+  .gslot.new { border-color: #c7a5ff; }
+  .gslot.blank { border-style: dashed; opacity: .45; }
+
+  .detail-model { aspect-ratio: 1.3; border-radius: .5cqw; display: grid; place-items: center;
+    background: radial-gradient(circle at 50% 60%, rgba(111,240,224,.16), transparent 65%); position: relative; }
+  .detail-model .turn { position: absolute; bottom: .4cqw; font-size: .8cqw; color: var(--ink-dim); }
+  .ring { position: absolute; width: 70%; height: 16%; bottom: 16%; border: 1px solid var(--holo-line); border-radius: 50%; }
+
+  .coll-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: .7cqw; }
+  .citem {
+    border-radius: .45cqw; border: 1px solid rgba(111,240,224,.22); background: rgba(0,0,0,.22); padding: .6cqw .5cqw .5cqw;
+    text-align: center; font-size: .82cqw; cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .citem:hover { background: rgba(111,240,224,.12); border-color: var(--holo); }
+  .citem .ic { font-size: 2.1cqw; line-height: 1.2; }
+  .citem .st { display: block; color: var(--holo-dim); font-size: .7cqw; margin-top: .15cqw; }
+  .citem.unknown { opacity: .4; }
+  .citem.unknown .ic { filter: brightness(0); }
+  .citem.on { border-color: var(--holo); background: rgba(111,240,224,.16); }
+
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: .45cqw 1.2cqw; font-size: .95cqw; align-items: center; }
+  .keys kbd { font-family: inherit; font-weight: 600; font-size: .85cqw; padding: .15cqw .6cqw; border-radius: .25cqw; background: rgba(255,255,255,.9); color: #102020; justify-self: start; white-space: nowrap; }
+  .setrow { display: grid; grid-template-columns: 11cqw 1fr; align-items: center; gap: 1cqw; font-size: 1cqw; margin-bottom: 1cqw; }
+  .seg { display: flex; gap: .4cqw; }
+  .seg .tab { font-size: .95cqw; padding: .35cqw 1cqw; }
+  .slider { height: .45cqw; background: rgba(255,255,255,.15); border-radius: 1cqw; position: relative; }
+  .slider i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--holo); border-radius: 1cqw; }
+  .slider b { position: absolute; top: 50%; width: 1.1cqw; height: 1.1cqw; border-radius: 50%; background: #fff; transform: translate(-50%, -50%); }
+
+  /* หน้าเริ่มเกม */
+  .title-wrap { position: absolute; left: 6cqw; top: 50%; transform: translateY(-50%); }
+  .title-wrap .en { font-size: 1.2cqw; letter-spacing: .9em; color: rgba(255,255,255,.7); margin-bottom: .4cqw; }
+  .title-wrap h1 { margin: 0; font-size: 7cqw; font-weight: 300; letter-spacing: .08em; line-height: 1.15; text-shadow: 0 0 3cqw rgba(0,0,0,.4); }
+  .title-wrap .tag { font-size: 1.15cqw; color: rgba(255,255,255,.72); margin: .6cqw 0 3cqw; }
+  .menu { display: grid; gap: .5cqw; width: 18cqw; }
+  .menu button {
+    font: inherit; text-align: left; font-size: 1.35cqw; color: rgba(255,255,255,.82); cursor: pointer;
+    background: transparent; border: 0; border-left: 2px solid transparent; padding: .5cqw 1cqw;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .menu button:hover { color: #fff; border-left-color: var(--holo); background: linear-gradient(90deg, rgba(111,240,224,.18), transparent); }
+  .menu button.first { color: #fff; border-left-color: var(--holo); }
+  .menu button small { display: block; font-size: .85cqw; color: rgba(255,255,255,.5); }
+  .version { position: absolute; right: 2cqw; bottom: 1.6cqw; font-size: .85cqw; color: rgba(255,255,255,.45); }
+
+  /* หน้าตาย */
+  .death { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(10,4,6,.55), rgba(0,0,0,.92)); display: grid; place-items: center; text-align: center; }
+  .death h2 { margin: 0; font-size: 3.4cqw; font-weight: 300; letter-spacing: .1em; }
+  .death .cause { color: #ff9a9a; font-size: 1.3cqw; margin: .6cqw 0 1.6cqw; }
+  .death .quote { font-style: italic; color: rgba(255,255,255,.7); font-size: 1.15cqw; max-width: 42cqw; line-height: 1.7; margin: 0 auto 2cqw; }
+  .clone { width: 30cqw; margin: 0 auto; text-align: left; font-size: .95cqw; color: var(--holo-dim); }
+  .clone .meter { height: .55cqw; margin: .5cqw 0 .3cqw; }
+  .lost { display: flex; gap: .5cqw; justify-content: center; margin: 1.6cqw 0 0; flex-wrap: wrap; }
+  .lost span { font-size: .85cqw; padding: .25cqw .6cqw; border-radius: .3cqw; border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.75); }
+
+  .note-box { max-width: 1400px; margin: 6px auto 0; font-size: 14px; line-height: 1.75; color: var(--ink-dim); }
+  .note-box b { color: var(--ink); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<!-- ===== ฉากหลังใช้ซ้ำทุกจอ (สีเปลี่ยนตามชุดสีของกรอบ) ===== -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--sky1)"/><stop offset="1" stop-color="var(--sky2)"/>
+    </linearGradient>
+    <radialGradient id="sunglow"><stop offset="0" stop-color="var(--sun)" stop-opacity=".9"/><stop offset="1" stop-color="var(--sun)" stop-opacity="0"/></radialGradient>
+    <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--sky2)" stop-opacity="0"/><stop offset="1" stop-color="var(--sky2)" stop-opacity="var(--haze)"/></linearGradient>
+    <g id="pine"><path d="M0 0 L-14 34 L-6 34 L-18 62 L-7 62 L-22 92 L22 92 L7 62 L18 62 L6 34 L14 34 Z" fill="var(--mn)"/><rect x="-3" y="90" width="6" height="12" fill="var(--mn)"/></g>
+    <symbol id="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+      <g style="opacity:var(--star)" fill="#fff">
+        <circle cx="120" cy="80" r="1.6"/><circle cx="300" cy="140" r="1.2"/><circle cx="460" cy="60" r="1.8"/><circle cx="620" cy="190" r="1.1"/>
+        <circle cx="760" cy="90" r="1.5"/><circle cx="900" cy="40" r="1.2"/><circle cx="1010" cy="160" r="1.7"/><circle cx="1180" cy="70" r="1.3"/>
+        <circle cx="1320" cy="130" r="1.6"/><circle cx="1480" cy="50" r="1.2"/><circle cx="200" cy="240" r="1"/><circle cx="1100" cy="250" r="1"/>
+        <circle cx="560" cy="300" r="1"/><circle cx="1400" cy="280" r="1.1"/><circle cx="60" cy="330" r="1"/><circle cx="840" cy="230" r="1"/>
+      </g>
+      <circle cx="1180" cy="230" r="150" style="fill:var(--sun);opacity:.12"/><circle cx="1180" cy="230" r="95" style="fill:var(--sun);opacity:.18"/>
+      <circle cx="1180" cy="230" r="46" fill="var(--sun)"/>
+      <g fill="var(--cloud)" opacity=".75">
+        <ellipse cx="330" cy="190" rx="150" ry="26"/><ellipse cx="410" cy="172" rx="90" ry="30"/>
+        <ellipse cx="880" cy="120" rx="190" ry="22"/><ellipse cx="960" cy="104" rx="80" ry="24"/>
+        <ellipse cx="1430" cy="330" rx="140" ry="18"/>
+      </g>
+      <path d="M0 520 L140 400 L260 470 L420 330 L560 450 L700 380 L860 470 L1000 350 L1150 440 L1300 360 L1460 450 L1600 390 L1600 900 L0 900 Z" fill="var(--mf)"/>
+      <path d="M0 600 L180 500 L330 560 L470 470 L640 570 L780 520 L940 600 L1120 500 L1290 580 L1440 520 L1600 590 L1600 900 L0 900 Z" fill="var(--mm)"/>
+      <rect y="380" width="1600" height="330" style="fill:var(--sky2);opacity:var(--haze)"/>
+      <!-- ซากเมืองในหุบเขา -->
+      <g fill="var(--ruin)">
+        <path d="M560 640 L560 470 L600 470 L600 455 L640 455 L640 520 L652 510 L652 640 Z"/>
+        <path d="M670 640 L670 420 L735 420 L735 445 L722 470 L740 500 L740 640 Z"/>
+        <path d="M760 640 L760 520 L800 520 L812 540 L830 532 L830 640 Z"/>
+        <path d="M850 640 L850 480 L890 470 L905 490 L905 640 Z"/>
+        <rect x="575" y="490" width="8" height="10" fill="var(--mm)"/><rect x="590" y="510" width="8" height="10" fill="var(--mm)"/>
+        <rect x="685" y="440" width="9" height="12" fill="var(--mm)"/><rect x="705" y="470" width="9" height="12" fill="var(--mm)"/><rect x="685" y="500" width="9" height="12" fill="var(--mm)"/>
+      </g>
+      <g fill="var(--vine)">
+        <path d="M670 420 q10 40 -4 80 q10 30 2 140 l10 0 q-4 -90 6 -150 q-8 -40 -2 -70 z"/>
+        <path d="M600 455 q8 30 -2 60 l8 0 q4 -30 2 -60 z"/><ellipse cx="735" cy="425" rx="22" ry="10"/><ellipse cx="880" cy="475" rx="20" ry="9"/>
+      </g>
+      <path d="M0 700 Q300 640 620 660 T1600 650 L1600 900 L0 900 Z" fill="var(--gr)"/>
+      <!-- แม่น้ำ -->
+      <path d="M980 900 Q1060 780 1180 720 T1600 680 L1600 700 Q1300 730 1220 760 T1080 900 Z" fill="var(--sky2)" opacity=".5"/>
+      <g>
+        <use href="#pine" transform="translate(90 560) scale(1.5)"/><use href="#pine" transform="translate(150 590) scale(1.2)"/>
+        <use href="#pine" transform="translate(260 600) scale(1.7)"/><use href="#pine" transform="translate(1320 570) scale(1.6)"/>
+        <use href="#pine" transform="translate(1400 600) scale(1.2)"/><use href="#pine" transform="translate(1500 560) scale(1.9)"/>
+        <use href="#pine" transform="translate(460 630) scale(.9)"/><use href="#pine" transform="translate(1060 620) scale(.9)"/>
+      </g>
+      <path d="M0 780 Q400 730 800 760 T1600 750 L1600 900 L0 900 Z" fill="var(--gr2)"/>
+      <!-- หญ้า -->
+      <g stroke="var(--gr)" stroke-width="3" stroke-linecap="round" fill="none">
+        <path d="M60 900 q6 -50 -6 -90 M80 900 q-4 -40 10 -70 M110 900 q2 -55 -10 -80 M1460 900 q4 -60 -10 -95 M1490 900 q-2 -40 12 -70 M1520 900 q6 -50 -4 -80 M380 900 q4 -40 -8 -60 M1200 900 q-4 -40 10 -60"/>
+      </g>
+      <!-- ป้ายถนน + รถร้าง -->
+      <g fill="var(--ruin)">
+        <rect x="1236" y="700" width="5" height="90"/><rect x="1190" y="690" width="92" height="30" rx="3" fill="#3f6b55"/>
+        <path d="M330 800 L345 775 L420 770 L440 790 L465 795 L465 812 L330 815 Z"/><circle cx="355" cy="815" r="9" fill="#111"/><circle cx="440" cy="815" r="9" fill="#111"/>
+      </g>
+      <text x="1236" y="711" font-size="12" fill="#e8efe8" text-anchor="middle" font-family="Chakra Petch">HOSPITAL 2 km →</text>
+    </symbol>
+
+    <!-- ตัวละคร: ชุดอวกาศ 4 แขน + โหลแก้วมีปลาหมึก (มองจากด้านหลังเฉียง) -->
+    <symbol id="hero" viewBox="0 0 200 300">
+      <ellipse cx="100" cy="292" rx="52" ry="7" fill="#000" opacity=".3"/>
+      <rect x="70" y="200" width="24" height="88" rx="10" fill="#c9ccc6"/><rect x="106" y="200" width="24" height="88" rx="10" fill="#bfc2bc"/>
+      <rect x="64" y="276" width="34" height="14" rx="6" fill="#6b6f6a"/><rect x="102" y="276" width="34" height="14" rx="6" fill="#6b6f6a"/>
+      <path d="M48 128 Q42 170 40 205 L54 208 Q60 172 66 140 Z" fill="#b9bcb6"/>
+      <path d="M152 128 Q158 170 160 205 L146 208 Q140 172 134 140 Z" fill="#b9bcb6"/>
+      <path d="M58 170 Q36 190 30 222 L43 226 Q50 198 68 184 Z" fill="#aeb1ab"/>
+      <path d="M142 170 Q164 190 170 222 L157 226 Q150 198 132 184 Z" fill="#aeb1ab"/>
+      <rect x="56" y="104" width="88" height="112" rx="26" fill="#d6d8d2"/>
+      <rect x="70" y="118" width="60" height="58" rx="10" fill="#9a9e98"/>
+      <rect x="76" y="124" width="48" height="10" rx="3" fill="#7fd7ff" opacity=".85"/>
+      <rect x="76" y="140" width="22" height="28" rx="4" fill="#7d817b"/><rect x="102" y="140" width="22" height="28" rx="4" fill="#7d817b"/>
+      <rect x="74" y="94" width="52" height="16" rx="6" fill="#8d918b"/>
+      <circle cx="100" cy="58" r="44" fill="#9fd9e6" opacity=".35" stroke="#e9f7fb" stroke-width="3"/>
+      <path d="M68 70 q32 14 64 0 l0 18 q-32 16 -64 0 z" fill="#5fb5c9" opacity=".35"/>
+      <g fill="#c873b8">
+        <ellipse cx="100" cy="52" rx="20" ry="18"/>
+        <path d="M84 62 q-10 18 -2 30 q4 -12 10 -24 z"/><path d="M93 66 q-4 18 2 28 q2 -12 4 -26 z"/>
+        <path d="M107 66 q4 18 -2 28 q-2 -12 -4 -26 z"/><path d="M116 62 q10 18 2 30 q-4 -12 -10 -24 z"/>
+      </g>
+      <circle cx="100" cy="58" r="44" fill="none" stroke="#fff" stroke-width="2" opacity=".5"/>
+      <path d="M72 34 q12 -16 30 -18" stroke="#fff" stroke-width="4" fill="none" opacity=".55" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="page-head">
+  <h1>ร่องรอย (Remnant) · มอคอัปหน้าจอ 9 หน้า</h1>
+  <p>ทุกหน้าวางเรียงให้เห็นพร้อมกัน ภาพฉากหลังเป็นแค่ภาพร่างแทนโลกสามมิติจริง ดูเฉพาะการจัดวาง UI · ตัวเลขทุกตัวเป็นตัวอย่าง</p>
+</header>
+
+<!-- ① หน้าเริ่มเกม -->
+<section class="shot">
+  <div class="shot-label"><b>① หน้าเริ่มเกม</b><span>ฉากโลกจริงอยู่ข้างหลัง ช่วงแดดเย็น · เมนูชิดซ้าย</span></div>
+  <div class="frame t-dusk">
+    <svg class="scene"><use href="#scene"/></svg>
+    <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.55),transparent 55%)"></div>
+    <div class="title-wrap">
+      <div class="en">REMNANT</div>
+      <h1>ร่องรอย</h1>
+      <div class="tag">สิ่งที่มนุษย์ทิ้งไว้ บนดาวที่ไม่มีใครเหลืออยู่แล้ว</div>
+      <nav class="menu">
+        <button class="first">เล่นต่อ<small>ร่างที่ 3 · วันที่ 6 · ค้นพบ 14 อย่าง</small></button>
+        <button>เริ่มสำรวจใหม่</button>
+        <button>คอลเลกชัน</button>
+        <button>ตั้งค่า</button>
+        <button>ออกจากเกม</button>
+      </nav>
+    </div>
+    <div class="version">เดโม 0.1.0</div>
+  </div>
+</section>
+
+<!-- ② หน้าเล่นเกม กลางวัน -->
+<section class="shot">
+  <div class="shot-label"><b>② หน้าเล่นเกม · กลางวัน</b><span>เข็มทิศบน · มินิแมพขวาบน · แถบแรงซ้ายล่าง · ช่องแขน 4 ช่อง + แถบ 9 ช่องตรงกลางล่าง · กำลังสแกนรถยนต์</span></div>
+  <div class="frame t-day">
+    <svg class="scene"><use href="#scene"/></svg>
+    <svg class="hero"><use href="#hero"/></svg>
+    <div class="hud">
+      <div class="toast-scan">ส่งผลสแกนเข้ายานแล้ว<br><b>รถยนต์</b> ชิ้นที่ 2 จาก 3</div>
+      <div class="compass"><span class="tick">|</span><span>ตต.</span><span class="tick">|</span><span class="n">น.</span><span class="tick">|</span><span>ตอ.</span><span class="tick">|</span><span>อ.</span><span class="tick">|</span></div>
+      <div class="minimap">
+        <svg viewBox="0 0 100 100">
+          <rect width="100" height="100" fill="#0a1414"/>
+          <path d="M18 70 Q30 40 52 38 Q70 36 80 52 Q86 70 70 80 Q50 92 30 84 Z" fill="#2e4733"/>
+          <path d="M60 46 Q70 56 74 74" stroke="#5fa8c8" stroke-width="3" fill="none"/>
+          <rect x="40" y="52" width="6" height="5" fill="#6a7069"/><rect x="48" y="56" width="5" height="6" fill="#6a7069"/>
+          <polygon points="50,46 46,56 50,53 54,56" fill="#fff"/>
+          <circle cx="30" cy="74" r="3.2" fill="#6ff0e0"/><text x="30" y="70" font-size="6" fill="#6ff0e0" text-anchor="middle" font-family="Chakra Petch">ยาน</text>
+        </svg>
+      </div>
+      <div class="minimap-key">มินิแมพ · กด M ดูจอใหญ่</div>
+
+      <div class="reticle" style="left:21cqw;top:42.5cqw"></div>
+      <div class="scan-card" style="left:3cqw;top:9cqw">
+        <div class="kind">สแกนแล้ว · ของใหญ่ สแกนได้อย่างเดียว</div>
+        <h3>โครงเหล็กมีล้อ <small>รถยนต์</small></h3>
+        <div class="layer"><span class="lt">ชั้นที่ 1 · ฉันเดาว่า</span>สิ่งมีชีวิตที่นี่คงขังตัวเองไว้ในกล่อง แล้วให้กล่องพาไป</div>
+        <div class="layer locked"><span class="lt">ชั้นที่ 2 · ความจริง <span class="progress-dots"><i class="on"></i><i class="on"></i><i></i></span></span>สแกนรถยนต์อีก 1 คันเพื่อปลดล็อก</div>
+        <div class="layer locked personal"><span class="lt">ชั้นที่ 3 · บันทึกของฉัน</span>ยังไม่มี</div>
+      </div>
+
+      <div class="prompt" style="left:60cqw;top:36cqw"><kbd>E</kbd> เก็บ ตุ๊กตาหมี · 0.3 กก.</div>
+
+      <div class="bars">
+        <div class="bar"><span>แรง</span><div class="track"><div class="fill" style="width:72%"></div></div></div>
+        <div class="bar o2"><span>ออกซิเจน</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="note">ขึ้นเฉพาะตอนกำลังลด (จอนี้ใส่ไว้ให้เห็นที่)</span></div>
+      </div>
+
+      <div class="belt">
+        <div class="arms">
+          <div class="arm main"><kbd>คลิกซ้าย</kbd><span class="what">เครื่องสแกน<small>แขนบนขวา · หลัก</small></span></div>
+          <div class="arm"><kbd>คลิกขวา</kbd><span class="what">ไฟฉาย<small>แขนบนซ้าย · ปิดอยู่</small></span></div>
+          <div class="arm"><kbd>Q</kbd><span class="what">ปืนปลาหมึก<small>แขนล่างขวา · หมึก 5/10</small></span></div>
+          <div class="arm"><kbd>R</kbd><span class="what">ปืนกาว<small>แขนล่างซ้าย · กาว 3/6</small></span></div>
+        </div>
+        <div class="hotbar">
+          <div class="slot inarm"><span class="num">1</span>📡<span class="name">สแกน</span></div>
+          <div class="slot inarm"><span class="num">2</span>🔦<span class="name">ไฟฉาย</span></div>
+          <div class="slot inarm"><span class="num">3</span>🦑<span class="name">ปืนหมึก</span></div>
+          <div class="slot inarm"><span class="num">4</span>🧴<span class="name">ปืนกาว</span></div>
+          <div class="slot"><span class="num">5</span>🧗<span class="name">ที่ปีน</span></div>
+          <div class="slot"><span class="num">6</span>🫧<span class="name">ออกซิเจน</span></div>
+          <div class="slot"><span class="num">7</span>🎒<span class="name">กระเป๋า</span></div>
+          <div class="slot empty"><span class="num">8</span></div>
+          <div class="slot empty"><span class="num">9</span></div>
+        </div>
+        <div class="belt-legend">จุดฟ้ามุมช่อง = กำลังถืออยู่ในแขน · กดเลขเพื่อเอาของเข้าแขนหลัก</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ③ หน้าเล่นเกม กลางคืน บาดเจ็บ หนาว -->
+<section class="shot">
+  <div class="shot-label"><b>③ หน้าเล่นเกม · กลางคืน บาดเจ็บ และหนาว</b><span>ขอบจอแดง · โหลร้าว · น้ำแข็งเกาะขอบ · เปิดไฟฉายแล้วแถบแบตโผล่ · อยู่ใต้น้ำแถบออกซิเจนโผล่</span></div>
+  <div class="frame t-night">
+    <svg class="scene"><use href="#scene"/></svg>
+    <div class="flashlight"></div>
+    <svg class="hero" style="filter:brightness(.55) saturate(.6)"><use href="#hero"/></svg>
+    <div class="frost"></div>
+    <div class="hurt"></div>
+    <svg class="crack" viewBox="0 0 1600 900" preserveAspectRatio="none">
+      <g stroke="rgba(255,255,255,.55)" stroke-width="2" fill="none">
+        <path d="M1600 120 L1480 180 L1440 260 L1380 290 M1480 180 L1520 280 M1440 260 L1460 340"/>
+        <path d="M0 760 L90 720 L150 650 M90 720 L120 800"/>
+      </g>
+    </svg>
+    <div class="hud">
+      <div class="compass"><span class="tick">|</span><span>ต.</span><span class="tick">|</span><span>ตต.</span><span class="tick">|</span><span class="n">น.</span><span class="tick">|</span><span>ตอ.</span><span class="tick">|</span></div>
+      <div class="minimap">
+        <svg viewBox="0 0 100 100">
+          <rect width="100" height="100" fill="#050909"/>
+          <path d="M18 70 Q30 40 52 38 Q70 36 80 52 Q86 70 70 80 Q50 92 30 84 Z" fill="#1a2a1e"/>
+          <path d="M60 46 Q70 56 74 74" stroke="#355f73" stroke-width="3" fill="none"/>
+          <polygon points="50,46 46,56 50,53 54,56" fill="#fff"/>
+          <circle cx="30" cy="74" r="3.2" fill="#6ff0e0"/>
+          <text x="66" y="34" font-size="9" fill="#ff7070" text-anchor="middle" font-family="Chakra Petch">✕</text>
+        </svg>
+      </div>
+      <div class="minimap-key">✕ แดง = จุดตายล่าสุด</div>
+
+      <div class="status-chip" style="left:2cqw;top:2.2cqw;border-color:rgba(255,90,90,.5)">โหลร้าว 2 จุด · ใช้ปืนกาวอุด</div>
+      <div class="status-chip" style="left:2cqw;top:5cqw;border-color:rgba(200,230,255,.5)">หนาว · น้ำแข็งกำลังลามเข้ากระจก</div>
+
+      <div class="bars">
+        <div class="bar low"><span>แรง</span><div class="track"><div class="fill" style="width:22%"></div></div></div>
+        <div class="bar o2 low"><span>ออกซิเจน</span><div class="track"><div class="fill" style="width:38%"></div></div></div>
+        <div class="bar bat"><span>แบตไฟฉาย</span><div class="track"><div class="fill" style="width:54%"></div></div></div>
+      </div>
+
+      <div class="belt">
+        <div class="arms">
+          <div class="arm main"><kbd>คลิกซ้าย</kbd><span class="what">ปืนกาว<small>แขนบนขวา · กาว 1/6</small></span></div>
+          <div class="arm" style="border-color:#ffe07a"><kbd>คลิกขวา</kbd><span class="what">ไฟฉาย<small>เปิดอยู่ · แบต 54%</small></span></div>
+          <div class="arm"><kbd>Q</kbd><span class="what">ปืนปลาหมึก<small>หมึก 2/10</small></span></div>
+          <div class="arm"><kbd>R</kbd><span class="what">ถังออกซิเจน<small>เหลือ 1 ถัง</small></span></div>
+        </div>
+        <div class="hotbar">
+          <div class="slot"><span class="num">1</span>📡<span class="name">สแกน</span></div>
+          <div class="slot inarm"><span class="num">2</span>🔦<span class="name">ไฟฉาย</span></div>
+          <div class="slot inarm"><span class="num">3</span>🦑<span class="name">ปืนหมึก</span></div>
+          <div class="slot inarm"><span class="num">4</span>🧴<span class="name">ปืนกาว</span></div>
+          <div class="slot"><span class="num">5</span>🧗<span class="name">ที่ปีน</span></div>
+          <div class="slot inarm"><span class="num">6</span>🫧<span class="name">ออกซิเจน</span></div>
+          <div class="slot"><span class="num">7</span>🎒<span class="name">กระเป๋า</span></div>
+          <div class="slot"><span class="num">8</span>🧸<span class="name">ตุ๊กตาหมี</span></div>
+          <div class="slot empty"><span class="num">9</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ④ หน้าเลือกของที่ยาน -->
+<section class="shot">
+  <div class="shot-label"><b>④ หน้าเลือกของก่อนออกจากยาน</b><span>ซ้ายคือของที่ยานจำลองได้ไม่จำกัด · กลางคือของที่จะพก · ขวาคือน้ำหนักรวม · ปุ่มแพ็กเกจเริ่มต้น</span></div>
+  <div class="frame t-day">
+    <svg class="scene"><use href="#scene"/></svg>
+    <div class="dim"></div>
+    <div class="holo">
+      <div class="holo-head">
+        <h2>ยาน · เตรียมออกสำรวจ</h2><span class="sub">ร่างที่ 3 · ยานจำลองอุปกรณ์ได้ไม่จำกัด</span>
+        <span class="spacer"></span>
+        <button class="btn">แพ็กเกจเริ่มต้น</button>
+        <button class="btn primary">ออกเดินทาง</button>
+      </div>
+      <div class="cols" style="grid-template-columns: 1.25fr 1fr .8fr">
+        <div class="panel">
+          <h4>ของในยาน · คลิกเพื่อหยิบ · ลากแถบเพื่อกำหนดจำนวน</h4>
+          <div class="stock">
+            <div class="stock-row taken"><span class="ic">📡</span><span>เครื่องสแกน<small>หยิบแล้ว</small></span><span></span><span class="w">1.2 กก.</span></div>
+            <div class="stock-row taken"><span class="ic">🔦</span><span>ไฟฉาย<small>แบต 100%</small></span><div class="meter"><i style="width:100%"></i></div><span class="w">0.6 กก.</span></div>
+            <div class="stock-row taken"><span class="ic">🦑</span><span>ปืนปลาหมึก<small>หมึก 5 จาก 10</small></span><div class="meter"><i style="width:50%"></i></div><span class="w">1.8 กก.</span></div>
+            <div class="stock-row taken"><span class="ic">🧴</span><span>ปืนกาว<small>กาว 3 จาก 6</small></span><div class="meter"><i style="width:50%"></i></div><span class="w">1.1 กก.</span></div>
+            <div class="stock-row taken"><span class="ic">🧗</span><span>ที่ปีนป่าย</span><span></span><span class="w">2.0 กก.</span></div>
+            <div class="stock-row taken"><span class="ic">🫧</span><span>ถังออกซิเจนสำรอง<small>1 จาก 2 ถัง</small></span><div class="meter"><i style="width:50%"></i></div><span class="w">1.5 กก.</span></div>
+            <div class="stock-row"><span class="ic">🎒</span><span>กระเป๋าใบเล็ก<small>รับได้ 6 กก.</small></span><span></span><span class="w">0.5 กก.</span></div>
+            <div class="stock-row taken"><span class="ic">🎒</span><span>กระเป๋าใบกลาง<small>รับได้ 12 กก.</small></span><span></span><span class="w">1.0 กก.</span></div>
+            <div class="stock-row"><span class="ic">🎒</span><span>กระเป๋าใบใหญ่<small>รับได้ 20 กก.</small></span><span></span><span class="w">2.2 กก.</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h4>จะพกไป · แถบล่าง 9 ช่อง</h4>
+          <div class="grid-slots">
+            <div class="gslot"><span class="tag">1</span>📡<span class="kg">1.2</span></div>
+            <div class="gslot"><span class="tag">2</span>🔦<span class="kg">0.6</span></div>
+            <div class="gslot"><span class="tag">3</span>🦑<span class="kg">1.8</span></div>
+            <div class="gslot"><span class="tag">4</span>🧴<span class="kg">1.1</span></div>
+            <div class="gslot"><span class="tag">5</span>🧗<span class="kg">2.0</span></div>
+            <div class="gslot"><span class="tag">6</span>🫧<span class="kg">1.5</span></div>
+            <div class="gslot"><span class="tag">7</span>🎒<span class="kg">1.0</span></div>
+            <div class="gslot blank"><span class="tag">8</span></div>
+            <div class="gslot blank"><span class="tag">9</span></div>
+          </div>
+          <h4 style="margin-top:1.4cqw">ใส่แขนไว้ตอนออกจากยาน</h4>
+          <div class="arms" style="flex-wrap:wrap">
+            <div class="arm main"><kbd>คลิกซ้าย</kbd><span class="what">เครื่องสแกน</span></div>
+            <div class="arm"><kbd>คลิกขวา</kbd><span class="what">ไฟฉาย</span></div>
+            <div class="arm"><kbd>Q</kbd><span class="what">ปืนปลาหมึก</span></div>
+            <div class="arm"><kbd>R</kbd><span class="what">ปืนกาว</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h4>น้ำหนักที่แบก</h4>
+          <div class="weight-big">9.2 <small>/ 25 กก.</small></div>
+          <div class="wbar"><span class="a" style="width:37%"></span></div>
+          <div class="legend"><span><i style="background:var(--holo)"></i>อุปกรณ์ 9.2 กก.</span><span><i style="background:#c7a5ff"></i>ของที่เก็บ 0 กก.</span></div>
+          <p style="font-size:.9cqw;line-height:1.7;color:var(--ink-dim);margin:1.4cqw 0 0">ยิ่งหนัก แรงยิ่งลดเร็วตอนวิ่ง ว่าย และปีน<br>เกินเพดานแล้วจะเก็บของเพิ่มไม่ได้</p>
+          <h4 style="margin-top:1.4cqw">อุ่นร่างกาย</h4>
+          <div style="font-size:.95cqw">อยู่ใกล้ยาน · อุ่นเต็มแล้ว</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ⑤ หน้ากระเป๋า -->
+<section class="shot">
+  <div class="shot-label"><b>⑤ หน้ากระเป๋า (Tab หรือ I)</b><span>ของที่พกอยู่ · กระเป๋าซ้อนกระเป๋า · ลากของไปช่องแขนได้ · ปุ่มวางกระเป๋าและส่งสัญญาณ</span></div>
+  <div class="frame t-day">
+    <svg class="scene"><use href="#scene"/></svg>
+    <div class="dim"></div>
+    <div class="holo">
+      <div class="holo-head">
+        <div class="tabs"><button class="tab on">กระเป๋า</button><button class="tab">คอลเลกชัน</button></div>
+        <span class="spacer"></span>
+        <span class="sub">ปิดหน้านี้ <b style="color:var(--ink)">Tab</b></span>
+      </div>
+      <div class="cols" style="grid-template-columns: 1.2fr 1fr .9fr">
+        <div class="panel">
+          <h4>กระเป๋าใบกลาง · 7.8 / 12 กก.</h4>
+          <div class="grid-slots">
+            <div class="gslot new"><span class="tag">ใหม่</span>🧸<span class="kg">0.3</span></div>
+            <div class="gslot">📱<span class="kg">0.2</span></div>
+            <div class="gslot">🍾<span class="kg">0.6</span></div>
+            <div class="gslot">⌚<span class="kg">0.1</span></div>
+            <div class="gslot">📚<span class="kg">1.4</span></div>
+            <div class="gslot">🖼<span class="kg">0.9</span></div>
+            <div class="gslot">🌼<span class="kg">0.1</span></div>
+            <div class="gslot"><span class="tag">ซ้อน</span>🎒<span class="kg">4.2</span></div>
+            <div class="gslot blank"></div>
+            <div class="gslot blank"></div>
+          </div>
+          <div class="wbar" style="margin-top:1.4cqw"><span class="a" style="width:31%"></span><span class="b" style="width:31%"></span></div>
+          <div class="legend"><span><i style="background:var(--holo)"></i>อุปกรณ์ 9.2 กก.</span><span><i style="background:#c7a5ff"></i>ของที่เก็บ 7.8 กก.</span><span>รวม 17.0 / 25 กก.</span></div>
+          <div style="display:flex;gap:.6cqw;margin-top:1.2cqw;flex-wrap:wrap">
+            <button class="btn">วางกระเป๋าใบนี้ไว้ตรงนี้</button>
+            <button class="btn">ส่งสัญญาณเข้าแผนที่</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h4>ตุ๊กตาหมี · หมุนดูได้</h4>
+          <div class="detail-model"><span class="ring"></span><span style="font-size:7cqw">🧸</span><span class="turn">ลากเมาส์เพื่อหมุน</span></div>
+          <div class="layer" style="margin-top:.8cqw;font-size:.92cqw;line-height:1.6"><span class="lt">ชั้นที่ 1 · ฉันเดาว่า</span>สัตว์ตัวเล็กที่ถูกยัดนุ่นไว้ข้างใน มันไม่มีหัวใจ แต่มีรอยเย็บตรงที่หัวใจควรอยู่</div>
+        </div>
+        <div class="panel">
+          <h4>ช่องแขน · ลากของมาวาง</h4>
+          <div style="display:grid;gap:.6cqw">
+            <div class="arm main"><kbd>คลิกซ้าย</kbd><span class="what">เครื่องสแกน<small>แขนบนขวา</small></span></div>
+            <div class="arm"><kbd>คลิกขวา</kbd><span class="what">ไฟฉาย<small>แขนบนซ้าย</small></span></div>
+            <div class="arm"><kbd>Q</kbd><span class="what">ปืนปลาหมึก<small>แขนล่างขวา</small></span></div>
+            <div class="arm"><kbd>R</kbd><span class="what">ปืนกาว<small>แขนล่างซ้าย</small></span></div>
+          </div>
+          <h4 style="margin-top:1.4cqw">ร่างกาย</h4>
+          <div style="font-size:.92cqw;line-height:1.8">โหล ไม่มีรอยร้าว<br>ออกซิเจนในโหล 100%<br>อุณหภูมิ ปกติ</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ⑥ หน้าคอลเลกชัน -->
+<section class="shot">
+  <div class="shot-label"><b>⑥ หน้าคอลเลกชัน</b><span>ของที่ยังไม่เจอเป็นเงาดำ · กดดูโมเดลหมุนได้พร้อมข้อความสแกน 3 ชั้น · ไม่มีตัวนับเป้าหมาย</span></div>
+  <div class="frame t-day">
+    <svg class="scene"><use href="#scene"/></svg>
+    <div class="dim"></div>
+    <div class="holo">
+      <div class="holo-head">
+        <div class="tabs"><button class="tab">กระเป๋า</button><button class="tab on">คอลเลกชัน</button></div>
+        <div class="tabs" style="margin-left:1cqw"><button class="tab on">ทั้งหมด</button><button class="tab">ของมนุษย์</button><button class="tab">สัตว์</button><button class="tab">พืช</button><button class="tab">ร่องรอยของฉัน</button></div>
+        <span class="spacer"></span>
+      </div>
+      <div class="cols" style="grid-template-columns: 1.5fr 1fr">
+        <div class="panel">
+          <div class="coll-grid">
+            <div class="citem on"><div class="ic">🚗</div>รถยนต์<span class="st">ชั้น 1 · 2/3</span></div>
+            <div class="citem"><div class="ic">🧸</div>ตุ๊กตาหมี<span class="st">ชั้น 3 ครบ</span></div>
+            <div class="citem"><div class="ic">🦌</div>กวาง<span class="st">ชั้น 2</span></div>
+            <div class="citem"><div class="ic">🌲</div>ต้นสน<span class="st">ชั้น 2</span></div>
+            <div class="citem"><div class="ic">📱</div>โทรศัพท์<span class="st">ชั้น 1</span></div>
+            <div class="citem"><div class="ic">🐻</div>หมี<span class="st">ชั้น 1</span></div>
+            <div class="citem"><div class="ic">🍄</div>เห็ดเรืองแสง<span class="st">ชั้น 1</span></div>
+            <div class="citem"><div class="ic">🪧</div>ป้ายถนน<span class="st">ชั้น 2</span></div>
+            <div class="citem"><div class="ic">👤</div>ร่างที่ 1 ของฉัน<span class="st">ร่องรอยของฉัน</span></div>
+            <div class="citem unknown"><div class="ic">🦉</div>???</div>
+            <div class="citem unknown"><div class="ic">🚌</div>???</div>
+            <div class="citem unknown"><div class="ic">🐺</div>???</div>
+            <div class="citem unknown"><div class="ic">🦋</div>???</div>
+            <div class="citem unknown"><div class="ic">🌉</div>???</div>
+            <div class="citem unknown"><div class="ic">🖼</div>???</div>
+            <div class="citem unknown"><div class="ic">🐸</div>???</div>
+            <div class="citem unknown"><div class="ic">🌿</div>???</div>
+            <div class="citem unknown"><div class="ic">📮</div>???</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h4>รถยนต์ · ของใหญ่ สแกนได้อย่างเดียว</h4>
+          <div class="detail-model" style="aspect-ratio:1.8"><span class="ring"></span><span style="font-size:6cqw">🚗</span><span class="turn">ลากเมาส์เพื่อหมุน</span></div>
+          <div style="font-size:.92cqw;line-height:1.6;margin-top:.8cqw">
+            <div class="layer"><span class="lt">ชั้นที่ 1 · ฉันเดาว่า</span>สิ่งมีชีวิตที่นี่คงขังตัวเองไว้ในกล่อง แล้วให้กล่องพาไป</div>
+            <div class="layer locked"><span class="lt">ชั้นที่ 2 · ความจริง <span class="progress-dots"><i class="on"></i><i class="on"></i><i></i></span></span>สแกนรถยนต์อีก 1 คัน</div>
+            <div class="layer locked"><span class="lt">ชั้นที่ 3 · บันทึกของฉัน</span>ยังไม่มี</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ⑦ แผนที่จอใหญ่ -->
+<section class="shot">
+  <div class="shot-label"><b>⑦ แผนที่จอใหญ่ (M)</b><span>เปิดเฉพาะที่เคยเดิน · จุดยาน · จุดตายล่าสุด · ซากเก่า · กระเป๋าที่ส่งสัญญาณ</span></div>
+  <div class="frame t-day">
+    <svg class="scene"><use href="#scene"/></svg>
+    <div class="dim"></div>
+    <div class="holo">
+      <div class="holo-head"><h2>แผนที่</h2><span class="sub">สำรวจแล้วบางส่วน · 1 × 1 กม.</span><span class="spacer"></span><span class="sub">ปิด <b style="color:var(--ink)">M</b></span></div>
+      <div class="cols" style="grid-template-columns: 1fr 20cqw">
+        <div class="panel" style="padding:0;overflow:hidden;position:relative">
+          <svg viewBox="0 0 800 420" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;display:block">
+            <rect width="800" height="420" fill="#050b0c"/>
+            <defs>
+              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0 L0 0 0 40" fill="none" stroke="rgba(111,240,224,.07)"/></pattern>
+              <clipPath id="seen"><path d="M120 330 Q140 200 260 160 Q380 120 470 170 Q560 220 590 300 Q600 370 520 390 Q400 410 300 390 Q180 380 120 330 Z"/><circle cx="640" cy="120" r="46"/></clipPath>
+            </defs>
+            <g clip-path="url(#seen)">
+              <rect width="800" height="420" fill="#1f3423"/>
+              <path d="M200 260 Q260 200 330 230 Q300 300 230 300 Z" fill="#2a4a2f"/>
+              <path d="M380 140 Q430 120 480 160 Q470 210 420 210 Z" fill="#59625c"/>
+              <path d="M440 150 Q520 230 560 300 Q590 360 640 420" stroke="#4d93b3" stroke-width="10" fill="none"/>
+              <ellipse cx="640" cy="120" rx="34" ry="22" fill="#3c7a96"/>
+              <g fill="#7b827c"><rect x="400" y="170" width="14" height="12"/><rect x="420" y="180" width="12" height="14"/><rect x="438" y="168" width="10" height="10"/><rect x="410" y="192" width="14" height="10"/></g>
+              <path d="M470 260 L520 250" stroke="#b9a48a" stroke-width="5"/>
+            </g>
+            <rect width="800" height="420" fill="url(#grid)"/>
+            <g font-family="Chakra Petch" font-size="13">
+              <circle cx="170" cy="320" r="8" fill="#6ff0e0"/><text x="170" y="345" fill="#6ff0e0" text-anchor="middle">ยาน</text>
+              <text x="540" y="292" fill="#ff7070" font-size="20" text-anchor="middle">✕</text><text x="540" y="312" fill="#ff9a9a" text-anchor="middle">ร่างที่ 2</text>
+              <text x="300" y="215" fill="rgba(255,255,255,.45)" font-size="16" text-anchor="middle">✕</text><text x="300" y="232" fill="rgba(255,255,255,.5)" text-anchor="middle">ร่างที่ 1</text>
+              <rect x="356" y="296" width="14" height="14" rx="3" fill="#c7a5ff"/><text x="363" y="326" fill="#c7a5ff" text-anchor="middle">กระเป๋าใบเล็ก</text>
+              <polygon points="430,250 422,268 430,263 438,268" fill="#fff"/>
+              <text x="424" y="150" fill="rgba(255,255,255,.75)" text-anchor="middle">เมืองร้าง</text>
+              <text x="640" y="80" fill="rgba(255,255,255,.75)" text-anchor="middle">ทะเลสาบ</text>
+            </g>
+          </svg>
+        </div>
+        <div class="panel">
+          <h4>สัญลักษณ์</h4>
+          <div class="keys" style="grid-template-columns:2cqw 1fr">
+            <span style="color:var(--holo)">●</span><span>ยาน</span>
+            <span>▲</span><span>ตัวฉัน</span>
+            <span style="color:#ff7070">✕</span><span>จุดตายล่าสุด · ของยังอยู่</span>
+            <span style="color:rgba(255,255,255,.5)">✕</span><span>ซากเก่า · ของหายแล้ว</span>
+            <span style="color:#c7a5ff">■</span><span>กระเป๋าที่ส่งสัญญาณ</span>
+          </div>
+          <p style="font-size:.88cqw;line-height:1.7;color:var(--ink-dim);margin:1.4cqw 0 0">กระเป๋าที่วางแล้วลืมกดส่งสัญญาณ จะไม่ขึ้นบนแผนที่ ต้องเดินหาเอง<br>พื้นที่มืดคือที่ยังไม่เคยไป</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ⑧ หน้าตาย -->
+<section class="shot">
+  <div class="shot-label"><b>⑧ หน้าตอนตาย</b><span>บอกสาเหตุ · ยานจำลองร่างใหม่ · บอกว่าของทุกอย่างตกอยู่ที่ซาก</span></div>
+  <div class="frame t-night">
+    <svg class="scene"><use href="#scene"/></svg>
+    <svg class="crack" viewBox="0 0 1600 900" preserveAspectRatio="none" style="z-index:1">
+      <g stroke="rgba(255,255,255,.6)" stroke-width="2.5" fill="none">
+        <path d="M800 450 L650 300 L560 120 M650 300 L470 330 L300 260 M800 450 L980 330 L1120 140 M980 330 L1200 380 L1420 330 M800 450 L760 640 L700 840 M760 640 L560 700 M800 450 L1000 600 L1180 780 M1000 600 L1260 620"/>
+      </g>
+    </svg>
+    <div class="death" style="z-index:2">
+      <div>
+        <h2>โหลแตก</h2>
+        <div class="cause">ตกจากหน้าผาสูง · ร่างที่ 2 สิ้นสุด</div>
+        <div class="quote">"ฉันคิดว่าข้างล่างนั้นมีอะไรรออยู่ ฉันคิดผิด"</div>
+        <div class="clone">ยานกำลังจำลองร่างใหม่<div class="meter"><i style="width:64%"></i></div>64%</div>
+        <div class="lost"><span>ของทุกอย่างตกอยู่ที่ซาก</span><span>อุปกรณ์ 7 ชิ้น</span><span>ของที่เก็บ 9 ชิ้น</span><span>จุดตายขึ้นบนแผนที่แล้ว</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ⑨ หน้าตั้งค่า -->
+<section class="shot">
+  <div class="shot-label"><b>⑨ หน้าตั้งค่า (Esc)</b><span>ความละเอียดภาพ ต่ำ กลาง สูง · เสียง · ความไวเมาส์ · ปุ่มบังคับ</span></div>
+  <div class="frame t-dusk">
+    <svg class="scene"><use href="#scene"/></svg>
+    <div class="dim"></div>
+    <div class="holo">
+      <div class="holo-head"><h2>หยุดเกม</h2><span class="spacer"></span><button class="btn">ออกไปหน้าแรก</button><button class="btn primary">เล่นต่อ</button></div>
+      <div class="cols" style="grid-template-columns: 1fr 1fr">
+        <div class="panel">
+          <h4>ภาพและเสียง</h4>
+          <div class="setrow"><span>ภาษา</span><div class="seg"><button class="tab on">ไทย</button><button class="tab">English</button></div></div>
+          <div class="setrow"><span>ความละเอียดภาพ</span><div class="seg"><button class="tab">ต่ำ</button><button class="tab on">กลาง</button><button class="tab">สูง</button></div></div>
+          <div class="setrow"><span>ระยะมองเห็น</span><div class="slider"><i style="width:60%"></i><b style="left:60%"></b></div></div>
+          <div class="setrow"><span>เสียงธรรมชาติ</span><div class="slider"><i style="width:80%"></i><b style="left:80%"></b></div></div>
+          <div class="setrow"><span>เสียงอุปกรณ์</span><div class="slider"><i style="width:65%"></i><b style="left:65%"></b></div></div>
+          <div class="setrow"><span>ความไวเมาส์</span><div class="slider"><i style="width:45%"></i><b style="left:45%"></b></div></div>
+          <div class="setrow"><span>ความคืบหน้า</span><span style="color:var(--ink-dim);font-size:.92cqw">บันทึกในเบราว์เซอร์เครื่องนี้อัตโนมัติ</span></div>
+        </div>
+        <div class="panel">
+          <h4>ปุ่มบังคับ</h4>
+          <div class="keys">
+            <kbd>W A S D</kbd><span>เดิน</span>
+            <kbd>เมาส์</kbd><span>หมุนกล้อง</span>
+            <kbd>Shift</kbd><span>วิ่ง</span>
+            <kbd>Space</kbd><span>กระโดด</span>
+            <kbd>E</kbd><span>เก็บของ · ใช้ของในโลก</span>
+            <kbd>คลิกซ้าย / คลิกขวา</kbd><span>ใช้ของในแขนบนขวา / แขนบนซ้าย</span>
+            <kbd>Q / R</kbd><span>ใช้ของในแขนล่างขวา / แขนล่างซ้าย</span>
+            <kbd>1 ถึง 9</kbd><span>เอาของเข้าแขนหลัก</span>
+            <kbd>Tab หรือ I</kbd><span>กระเป๋า · คอลเลกชัน</span>
+            <kbd>M</kbd><span>แผนที่จอใหญ่</span>
+            <kbd>Esc</kbd><span>หยุดเกม</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="note-box">
+  <b>หมายเหตุ</b> · ไอคอนในช่องเป็นภาพแทนชั่วคราว ในเกมจริงจะเป็นภาพโมเดลสามมิติของของชิ้นนั้น · ตัวละครเป็นภาพร่างสองมิติ ในเกมจริงปั้นเป็นสามมิติ
+</div>
+
+<!-- ===== ฉบับภาษาอังกฤษ: คัดลอกทุกจอแล้วแปลเฉพาะตัวหนังสือในจอเกม (ในเกมจริงกดเปลี่ยนภาษาในหน้าตั้งค่า ไม่มีสองภาษาปนกัน) ===== -->
+<script>
+const EN = {
+  "ร่องรอย": "Remnant",
+  "สิ่งที่มนุษย์ทิ้งไว้ บนดาวที่ไม่มีใครเหลืออยู่แล้ว": "What humanity left behind, on a planet with no one left",
+  "เล่นต่อ": "Continue", "ร่างที่ 3 · วันที่ 6 · ค้นพบ 14 อย่าง": "Body 3 · Day 6 · 14 discoveries",
+  "เริ่มสำรวจใหม่": "New Expedition", "คอลเลกชัน": "Collection", "ตั้งค่า": "Settings", "ออกจากเกม": "Quit",
+  "เดโม 0.1.0": "Demo 0.1.0",
+  "ส่งผลสแกนเข้ายานแล้ว": "Scan uploaded to ship", "รถยนต์": "Car", "ชิ้นที่ 2 จาก 3": "2 of 3",
+  "ตต.": "NW", "น.": "N", "ตอ.": "NE", "อ.": "E", "ต.": "W",
+  "ยาน": "Ship", "มินิแมพ · กด M ดูจอใหญ่": "Minimap · press M for full map",
+  "สแกนแล้ว · ของใหญ่ สแกนได้อย่างเดียว": "SCANNED · LARGE OBJECT · SCAN ONLY",
+  "โครงเหล็กมีล้อ": "Wheeled Metal Frame",
+  "ชั้นที่ 1 · ฉันเดาว่า": "Layer 1 · My guess",
+  "สิ่งมีชีวิตที่นี่คงขังตัวเองไว้ในกล่อง แล้วให้กล่องพาไป": "The creatures here must have shut themselves inside boxes and let the boxes carry them.",
+  "ชั้นที่ 2 · ความจริง": "Layer 2 · The truth",
+  "สแกนรถยนต์อีก 1 คันเพื่อปลดล็อก": "Scan 1 more car to unlock",
+  "ชั้นที่ 3 · บันทึกของฉัน": "Layer 3 · My log", "ยังไม่มี": "Nothing yet",
+  "เก็บ ตุ๊กตาหมี · 0.3 กก.": "Pick up Teddy Bear · 0.3 kg",
+  "แรง": "Stamina", "ออกซิเจน": "Oxygen",
+  "ขึ้นเฉพาะตอนกำลังลด (จอนี้ใส่ไว้ให้เห็นที่)": "Shown only while draining (placed here to show its spot)",
+  "คลิกซ้าย": "L-Click", "คลิกขวา": "R-Click",
+  "เครื่องสแกน": "Scanner", "แขนบนขวา · หลัก": "Upper right · main",
+  "ไฟฉาย": "Flashlight", "แขนบนซ้าย · ปิดอยู่": "Upper left · off",
+  "ปืนปลาหมึก": "Ink Gun", "แขนล่างขวา · หมึก 5/10": "Lower right · ink 5/10",
+  "ปืนกาว": "Glue Gun", "แขนล่างซ้าย · กาว 3/6": "Lower left · glue 3/6",
+  "สแกน": "Scan", "ปืนหมึก": "Ink", "ที่ปีน": "Climb", "กระเป๋า": "Bag", "ออกซิเจน ": "Oxygen",
+  "จุดฟ้ามุมช่อง = กำลังถืออยู่ในแขน · กดเลขเพื่อเอาของเข้าแขนหลัก": "Blue dot = held in an arm · press a number to equip to main arm",
+  "✕ แดง = จุดตายล่าสุด": "Red ✕ = last death",
+  "โหลร้าว 2 จุด · ใช้ปืนกาวอุด": "Jar cracked in 2 places · seal with Glue Gun",
+  "หนาว · น้ำแข็งกำลังลามเข้ากระจก": "Cold · frost is creeping across the glass",
+  "แบตไฟฉาย": "Battery", "แขนบนขวา · กาว 1/6": "Upper right · glue 1/6",
+  "เปิดอยู่ · แบต 54%": "On · battery 54%", "หมึก 2/10": "Ink 2/10",
+  "ถังออกซิเจน": "Oxygen Tank", "เหลือ 1 ถัง": "1 tank left", "ตุ๊กตาหมี": "Teddy Bear",
+  "ยาน · เตรียมออกสำรวจ": "Ship · Expedition Prep",
+  "ร่างที่ 3 · ยานจำลองอุปกรณ์ได้ไม่จำกัด": "Body 3 · the ship can replicate gear without limit",
+  "แพ็กเกจเริ่มต้น": "Starter Pack", "ออกเดินทาง": "Depart",
+  "ของในยาน · คลิกเพื่อหยิบ · ลากแถบเพื่อกำหนดจำนวน": "SHIP STOCK · CLICK TO TAKE · DRAG BAR TO SET AMOUNT",
+  "หยิบแล้ว": "Taken", "แบต 100%": "Battery 100%", "หมึก 5 จาก 10": "Ink 5 of 10", "กาว 3 จาก 6": "Glue 3 of 6",
+  "ที่ปีนป่าย": "Climbing Gear", "ถังออกซิเจนสำรอง": "Spare Oxygen Tank", "1 จาก 2 ถัง": "1 of 2 tanks",
+  "กระเป๋าใบเล็ก": "Small Bag", "กระเป๋าใบกลาง": "Medium Bag", "กระเป๋าใบใหญ่": "Large Bag",
+  "รับได้ 6 กก.": "Holds 6 kg", "รับได้ 12 กก.": "Holds 12 kg", "รับได้ 20 กก.": "Holds 20 kg",
+  "จะพกไป · แถบล่าง 9 ช่อง": "LOADOUT · 9-SLOT BELT", "ใส่แขนไว้ตอนออกจากยาน": "ARMS ON DEPARTURE",
+  "น้ำหนักที่แบก": "CARRY WEIGHT", "/ 25 กก.": "/ 25 kg",
+  "อุปกรณ์ 9.2 กก.": "Gear 9.2 kg", "ของที่เก็บ 0 กก.": "Finds 0 kg", "ของที่เก็บ 7.8 กก.": "Finds 7.8 kg",
+  "ยิ่งหนัก แรงยิ่งลดเร็วตอนวิ่ง ว่าย และปีน": "The heavier you are, the faster stamina drains when running, swimming and climbing.",
+  "เกินเพดานแล้วจะเก็บของเพิ่มไม่ได้": "Over the limit, you can't pick up more.",
+  "อุ่นร่างกาย": "WARMTH", "อยู่ใกล้ยาน · อุ่นเต็มแล้ว": "Near ship · fully warm",
+  "ปิดหน้านี้": "Close", "ปิด": "Close",
+  "กระเป๋าใบกลาง · 7.8 / 12 กก.": "MEDIUM BAG · 7.8 / 12 kg", "ใหม่": "New", "ซ้อน": "Nested",
+  "รวม 17.0 / 25 กก.": "Total 17.0 / 25 kg",
+  "วางกระเป๋าใบนี้ไว้ตรงนี้": "Drop this bag here", "ส่งสัญญาณเข้าแผนที่": "Send beacon to map",
+  "ตุ๊กตาหมี · หมุนดูได้": "TEDDY BEAR · DRAG TO ROTATE", "ลากเมาส์เพื่อหมุน": "Drag to rotate",
+  "สัตว์ตัวเล็กที่ถูกยัดนุ่นไว้ข้างใน มันไม่มีหัวใจ แต่มีรอยเย็บตรงที่หัวใจควรอยู่": "A small animal stuffed with soft fibre. It has no heart, only a stitch where a heart should be.",
+  "ช่องแขน · ลากของมาวาง": "ARM SLOTS · DRAG ITEMS HERE",
+  "แขนบนขวา": "Upper right", "แขนบนซ้าย": "Upper left", "แขนล่างขวา": "Lower right", "แขนล่างซ้าย": "Lower left",
+  "ร่างกาย": "BODY", "โหล ไม่มีรอยร้าว": "Jar: no cracks", "ออกซิเจนในโหล 100%": "Jar oxygen 100%", "อุณหภูมิ ปกติ": "Temperature: normal",
+  "ทั้งหมด": "All", "ของมนุษย์": "Human", "สัตว์": "Animals", "พืช": "Plants", "ร่องรอยของฉัน": "My Remnants",
+  "ชั้น 1 · 2/3": "Layer 1 · 2/3", "ชั้น 3 ครบ": "Layer 3 done", "ชั้น 2": "Layer 2", "ชั้น 1": "Layer 1",
+  "กวาง": "Deer", "ต้นสน": "Pine", "โทรศัพท์": "Phone", "หมี": "Bear", "เห็ดเรืองแสง": "Glow Mushroom",
+  "ป้ายถนน": "Road Sign", "ร่างที่ 1 ของฉัน": "My Body 1",
+  "รถยนต์ · ของใหญ่ สแกนได้อย่างเดียว": "CAR · LARGE OBJECT · SCAN ONLY", "สแกนรถยนต์อีก 1 คัน": "Scan 1 more car",
+  "แผนที่": "Map", "สำรวจแล้วบางส่วน · 1 × 1 กม.": "Partly explored · 1 × 1 km",
+  "ร่างที่ 2": "Body 2", "ร่างที่ 1": "Body 1", "เมืองร้าง": "Ruined Town", "ทะเลสาบ": "Lake",
+  "สัญลักษณ์": "LEGEND", "ตัวฉัน": "Me", "จุดตายล่าสุด · ของยังอยู่": "Last death · items still there",
+  "ซากเก่า · ของหายแล้ว": "Old remains · items gone", "กระเป๋าที่ส่งสัญญาณ": "Beaconed bag",
+  "กระเป๋าที่วางแล้วลืมกดส่งสัญญาณ จะไม่ขึ้นบนแผนที่ ต้องเดินหาเอง": "Bags dropped without a beacon won't show on the map. You'll have to find them yourself.",
+  "พื้นที่มืดคือที่ยังไม่เคยไป": "Dark areas are unexplored.",
+  "โหลแตก": "Jar Shattered", "ตกจากหน้าผาสูง · ร่างที่ 2 สิ้นสุด": "Fell from a cliff · Body 2 lost",
+  "\"ฉันคิดว่าข้างล่างนั้นมีอะไรรออยู่ ฉันคิดผิด\"": "\"I thought something was waiting down there. I was wrong.\"",
+  "ยานกำลังจำลองร่างใหม่": "Ship is replicating a new body",
+  "ของทุกอย่างตกอยู่ที่ซาก": "Everything dropped at your remains", "อุปกรณ์ 7 ชิ้น": "7 gear", "ของที่เก็บ 9 ชิ้น": "9 finds",
+  "จุดตายขึ้นบนแผนที่แล้ว": "Death marked on map",
+  "หยุดเกม": "Paused", "ออกไปหน้าแรก": "Main Menu", "ภาพและเสียง": "GRAPHICS & AUDIO",
+  "ภาษา": "Language", "ไทย": "ไทย", "ความละเอียดภาพ": "Graphics", "ต่ำ": "Low", "กลาง": "Medium", "สูง": "High",
+  "ระยะมองเห็น": "View Distance", "เสียงธรรมชาติ": "Nature Volume", "เสียงอุปกรณ์": "Gear Volume",
+  "ความไวเมาส์": "Mouse Sensitivity", "ความคืบหน้า": "Progress", "บันทึกในเบราว์เซอร์เครื่องนี้อัตโนมัติ": "Auto-saved in this browser",
+  "ปุ่มบังคับ": "CONTROLS", "เดิน": "Move", "เมาส์": "Mouse", "หมุนกล้อง": "Look", "วิ่ง": "Run", "กระโดด": "Jump",
+  "เก็บของ · ใช้ของในโลก": "Pick up · Interact", "คลิกซ้าย / คลิกขวา": "L-Click / R-Click",
+  "ใช้ของในแขนบนขวา / แขนบนซ้าย": "Use upper right / upper left arm",
+  "ใช้ของในแขนล่างขวา / แขนล่างซ้าย": "Use lower right / lower left arm",
+  "1 ถึง 9": "1 – 9", "เอาของเข้าแขนหลัก": "Equip to main arm", "Tab หรือ I": "Tab or I",
+  "กระเป๋า · คอลเลกชัน": "Bag · Collection", "แผนที่จอใหญ่": "Full Map"
+};
+(function () {
+  const shots = [...document.querySelectorAll('.shot')];
+  const anchor = document.querySelector('.note-box');
+  const head = document.createElement('header');
+  head.className = 'page-head';
+  head.style.marginTop = '56px';
+  head.innerHTML = '<h1>ฉบับภาษาอังกฤษ</h1><p>เลือก English ในหน้าตั้งค่า ทั้งเกมเปลี่ยนเป็นภาษาอังกฤษ · ไม่มีสองภาษาปนในจอเดียว</p>';
+  anchor.before(head);
+  const missing = new Set();
+  shots.forEach(shot => {
+    const c = shot.cloneNode(true);
+    c.querySelector('.shot-label b').textContent += ' · English';
+    const frame = c.querySelector('.frame');
+    const w = document.createTreeWalker(frame, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = w.nextNode())) {
+      const t = n.nodeValue.trim();
+      if (!/[฀-๿]/.test(t)) continue;
+      if (t in EN) n.nodeValue = n.nodeValue.replace(t, EN[t]);
+      else if (/^[\d.]+ กก\.$/.test(t)) n.nodeValue = n.nodeValue.replace('กก.', 'kg');
+      else missing.add(t);
+    }
+    const en = frame.querySelector('.title-wrap .en');
+    if (en) en.remove();
+    frame.querySelectorAll('.seg').forEach(s => {
+      const b = [...s.children];
+      if (b.some(x => x.textContent === 'English')) b.forEach(x => x.classList.toggle('on', x.textContent === 'English'));
+    });
+    anchor.before(c);
+  });
+  window.__missingEN = [...missing];
+})();
+</script>
+</body>
+</html>
