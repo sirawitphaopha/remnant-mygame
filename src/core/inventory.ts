@@ -150,3 +150,39 @@ export function bagContents(l: Loadout, index: number): BagContents | null {
   const s = l.belt[index];
   return isBag(s) ? contentsOf(s) : null;
 }
+
+/**
+ * เก็บของจากซาก · ของที่เก็บมากับกระเป๋าก่อน แล้วค่อยอุปกรณ์
+ * อุปกรณ์ที่มีอยู่แล้ว (ยานจำลองให้ใหม่) ไม่เก็บซ้ำ แต่หมึก กาว ถังออกซิเจน รวมเข้ากับของเดิมจนเต็ม
+ * คืนของที่ยังเหลืออยู่ที่ซาก
+ */
+export function takeFromRemains(l: Loadout, slots: (Loadout['belt'][number])[]): (Loadout['belt'][number])[] {
+  const left = slots.slice();
+  const order = left.map((s, i) => ({ s, i })).filter((x) => x.s).sort((a, b) => rank(a.s) - rank(b.s));
+  for (const { s, i } of order) {
+    if (!s) continue;
+    if (s.kind === 'gear' && s.id !== 'bag') {
+      const mine = l.belt.find((x) => x && x.kind === 'gear' && x.id === s.id) as GearSlot | undefined;
+      if (mine) {
+        if (s.id === 'inkGun' || s.id === 'glueGun' || s.id === 'oxygenTank') {
+          const max = s.id === 'inkGun' ? GEAR.inkGun.max : s.id === 'glueGun' ? GEAR.glueGun.max : GEAR.oxygenTank.max;
+          mine.amount = Math.min(max, (mine.amount ?? 0) + (s.amount ?? 0));
+        }
+        left[i] = null;
+        continue;
+      }
+    }
+    const free = l.belt.indexOf(null);
+    if (free < 0) break;
+    l.belt[free] = s;
+    left[i] = null;
+  }
+  return left;
+}
+
+function rank(s: Loadout['belt'][number]): number {
+  if (!s) return 9;
+  if (s.kind === 'item') return 0;
+  if (s.id === 'bag') return 1;
+  return 2;
+}

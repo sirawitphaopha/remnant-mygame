@@ -258,3 +258,27 @@ export class HeroModel {
     this.octo.rotation.y = Math.sin(time * 0.5) * 0.4;
   }
 }
+
+/** ซากร่างเก่า: ชุดนอนคว่ำ โหลแตก ไม่มีปลาหมึก มีเศษแก้วรอบหัว */
+export function remainsModel(): THREE.Group {
+  const h = new HeroModel();
+  h.octo.visible = false;
+  h.jarWater.visible = false;
+  h.jarGlass.visible = false;
+  h.chestLight.visible = false;
+  h.body.rotation.x = -Math.PI / 2;
+  h.body.position.y = 0.25;
+  h.legs.forEach((l, i) => { l.hip.rotation.x = 0.1 * (i ? 1 : -1); l.knee.rotation.x = 0.3; });
+  h.arms.forEach((a, i) => { a.shoulder.rotation.x = -0.6 - (i % 2) * 0.4; a.shoulder.rotation.z = a.side * 0.9; });
+  const glass = new THREE.MeshStandardMaterial({ color: 0xe8f6fa, transparent: true, opacity: 0.45, roughness: 0.05 });
+  const g = new THREE.Group();
+  g.add(h.root);
+  for (let i = 0; i < 9; i++) {
+    const s = new THREE.Mesh(new THREE.TetrahedronGeometry(0.05 + (i % 3) * 0.025), glass);
+    const a = i * 0.7;
+    s.position.set(Math.cos(a) * (0.35 + (i % 4) * 0.12), 0.04, -1.05 + Math.sin(a) * (0.3 + (i % 3) * 0.1));
+    s.rotation.set(i, i * 2, i * 3);
+    g.add(s);
+  }
+  return g;
+}

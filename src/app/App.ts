@@ -26,12 +26,16 @@ import { t } from '../ui/strings';
 import { kind as kindOf } from '../core/catalog';
 import { ScanLog } from '../core/scanlog';
 import { buildLoadout, starterChoice, type ShipChoice } from '../core/gear';
-import { depositAll, dropBag, loadRatio as loadRatioOf, nestBag, pickUp, takeBag, unnestBag, type NestedBag } from '../core/inventory';
+import { depositAll, dropBag, loadRatio as loadRatioOf, nestBag, pickUp, takeBag, takeFromRemains, unnestBag, type NestedBag } from '../core/inventory';
 import { placeProps } from '../world/props';
 import { Props } from '../render/Props';
 import { ModelViewer } from '../render/ModelViewer';
 import { droppedBagModel } from '../render/models/props';
 import { InventoryScreen, ScanCard, ShipScreen, shownName } from '../ui/Screens';
+import { Body, type DeathCause } from '../core/body';
+import { emptyLoadout, type Slot } from '../core/gear';
+import { BodyFx, DeathScreen } from '../ui/BodyFx';
+import { remainsModel } from '../render/models/hero';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
 export class App {
@@ -73,6 +77,18 @@ export class App {
   readonly inventory: InventoryScreen;
   readonly shipScreen: ShipScreen;
   shipChoice: ShipChoice = starterChoice();
+  readonly body = new Body();
+  readonly bodyFx: BodyFx;
+  readonly deathScreen: DeathScreen;
+  /** ร่างที่เท่าไรแล้ว (ยานจำลองใหม่ทุกครั้งที่ตาย) */
+  bodyNumber = 1;
+  /** ซากร่างทุกร่าง · ร่างล่าสุดยังมีของ ร่างเก่าของหายแล้ว */
+  readonly corpses: { key: string; n: number; x: number; y: number; z: number; slots: Slot[]; object: THREE.Object3D }[] = [];
+  private dying: { t: number; cause: DeathCause } | null = null;
+  private lastDrain = -99;
+  /** ช่วง 8: ตรงนี้มีก๊าซพิษไหม (ถ้ำลึก) · ตรงนี้มีหลังคาไหม */
+  gasAt: (x: number, y: number, z: number) => boolean = () => false;
+  shelterAt: (x: number, y: number, z: number) => boolean = () => false;
   /** กระเป๋าที่วางไว้ในโลก */
   readonly droppedBags: { id: number; x: number; y: number; z: number; bag: NestedBag; beacon: boolean; object: THREE.Object3D }[] = [];
   private bagSeq = 0;
@@ -162,6 +178,8 @@ export class App {
       close: () => this.closeScreens(),
     });
     this.shipScreen = new ShipScreen(uiRoot, { depart: (c) => this.depart(c) });
+    this.bodyFx = new BodyFx(uiRoot);
+    this.deathScreen = new DeathScreen(uiRoot);
     this.tools = new Tools({
       scene: this.scene,
       hero: this.hero,
@@ -170,8 +188,8 @@ export class App {
       toast: (text, kind = '') => this.hud.toast(text, kind),
       findScanTarget: (o, d) => this.findScanTarget(o, d),
       onScanned: (target) => this.onScanned(target),
-      sealCrack: () => false,
-      refillOxygen: () => false,
+      sealCrack: () => this.body.seal(),
+      refillOxygen: () => this.body.refill(),
       onInk: () => {},
       sunlit: () => this.skyState.sunHeight > 0.05,
     });
@@ -285,8 +303,9 @@ export class App {
       if (pp.taken || Math.abs(pp.prop.x - p.x) > 30 || Math.abs(pp.prop.z - p.z) > 30) continue;
       test(pp.prop.key, pp.prop.kind, pp.prop.x, pp.y + (H[pp.prop.kind] ?? 0.12), pp.prop.z);
     }
+    for (const c of this.corpses) if (Math.abs(c.x - p.x) < 30 && Math.abs(c.z - p.z) < 30) test(c.key, 'remains', c.x, c.y + 0.3, c.z);
     const found = best as ScanTarget | null;
-    if (found) found.special = this.props.byKey.get(found.key)?.prop.special ?? false;
+    if (found) found.special = found.kind === 'remains' || (this.props.byKey.get(found.key)?.prop.special ?? false);
     return found;
   }
 
@@ -305,7 +324,73 @@ export class App {
 
   /** สภาพร่างกาย (ช่วง 7 ผูกค่าจริง) */
   bodyView(): { cracks: number; oxygen: number; cold: boolean } {
-    return { cracks: 0, oxygen: 1, cold: false };
+    return { cracks: this.body.cracks, oxygen: this.body.oxygen, cold: this.body.warmth < 0.7 };
+  }
+
+  /** ร่างกาย: ตก ออกซิเจน ความหนาว และเริ่มตาย */
+  private updateBody(dt: number): void {
+    const p = this.player;
+    if (p.lastFall > 0) {
+      const add = this.body.fall(p.lastFall);
+      if (add > 0 && !this.body.dead) this.hud.toast(`${t('cracked')} · ${t('sealWithGlue')}`, 'danger');
+      p.lastFall = 0;
+    }
+    const nearShip = Math.hypot(p.x - SHIP.x, p.z - SHIP.z) < 12;
+    const night = this.sky.night;
+    this.body.update(dt, {
+      underwater: p.underwater,
+      gas: this.gasAt(p.x, p.y + 1.7, p.z),
+      cold: Math.max(0, night * 1.1 - 0.1),
+      shelter: nearShip || this.shelterAt(p.x, p.y, p.z),
+    });
+    if (this.body.draining) this.lastDrain = this.elapsed;
+    this.bodyFx.update(this.body.cracks, this.body.hurt, this.body.warmth);
+    // ปลาหมึกซีดลงตามรอยร้าวและออกซิเจน
+    const octoMat = (this.hero.octo.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    const pale = Math.min(1, this.body.cracks / 4 + (1 - this.body.oxygen) * 0.8);
+    octoMat.color.setRGB(0.78 + 0.1 * pale, 0.45 + 0.35 * pale, 0.71 + 0.1 * pale);
+    if (this.body.dead) this.startDeath(this.body.dead);
+  }
+
+  private startDeath(cause: DeathCause): void {
+    const p = this.player;
+    // ของทุกอย่างตกอยู่ที่ซาก · ซากเก่าที่ยังมีของ ของหายไป (ซากยังอยู่)
+    for (const c of this.corpses) c.slots = [];
+    const slots = this.loadout.belt.slice();
+    const gear = slots.filter((s) => s && s.kind === 'gear').length;
+    let items = slots.filter((s) => s && s.kind === 'item').length;
+    for (const s of slots) if (s && s.kind === 'gear' && s.id === 'bag') items += (s as { contents?: { items: unknown[] } }).contents?.items.length ?? 0;
+    const obj = remainsModel();
+    obj.position.set(p.x, this.terrain.heightAt(p.x, p.z), p.z);
+    obj.rotation.y = p.heading;
+    this.scene.add(obj);
+    this.corpses.push({ key: `remains-${this.bodyNumber}`, n: this.bodyNumber, x: p.x, y: obj.position.y, z: p.z, slots, object: obj });
+    this.loadout = emptyLoadout();
+    this.hero.root.visible = false;
+    this.tools.spot.intensity = 0;
+    this.input.unlock();
+    this.hud.root.hidden = true;
+    this.deathScreen.show(cause, this.bodyNumber, gear, items);
+    this.dying = { t: 0, cause };
+  }
+
+  private updateDeath(dt: number): void {
+    const d = this.dying!;
+    d.t += dt;
+    this.deathScreen.setProgress(Math.min(1, d.t / 6));
+    if (d.t < 6.5) return;
+    this.dying = null;
+    this.deathScreen.hide();
+    this.hud.root.hidden = false;
+    this.bodyNumber++;
+    this.body.reset();
+    this.hero.root.visible = true;
+    this.player.place(SPAWN_POINT.x, SPAWN_POINT.z, SPAWN_POINT.heading);
+    this.player.stamina.value = 100;
+    this.player.stamina.exhausted = false;
+    this.rig.snap(this.player);
+    this.hud.toast(t('respawned'));
+    this.shipScreen.show(this.shipChoice, t('respawned'));
   }
 
   closeScreens(): void {
@@ -320,6 +405,19 @@ export class App {
     if (Math.hypot(p.x - SHIP.x, p.z - SHIP.z) < 9) {
       this.interact = { key: 'E', text: t('enterShip'), run: () => this.enterShip() };
       return;
+    }
+    for (const c of this.corpses) {
+      if (Math.hypot(c.x - p.x, c.z - p.z) < 2.2 && c.slots.some(Boolean)) {
+        this.interact = {
+          key: 'E',
+          text: t('takeFromBody'),
+          run: () => {
+            c.slots = takeFromRemains(this.loadout, c.slots);
+            this.hud.toast(c.slots.some(Boolean) ? t('bodySomeLeft') : t('tookFromBody'));
+          },
+        };
+        return;
+      }
     }
     for (const b of this.droppedBags) {
       if (Math.hypot(b.x - p.x, b.z - p.z) < 1.8) {
@@ -390,7 +488,9 @@ export class App {
 
   /** เครื่องหมายบนแผนที่ (ช่วง 6 และ 7 เพิ่มซาก กระเป๋า) */
   markers(): MapMarker[] {
-    return [{ kind: 'ship', x: SHIP.x, z: SHIP.z }, ...this.droppedBags.filter((b) => b.beacon).map((b) => ({ kind: 'bag' as const, x: b.x, z: b.z }))];
+    const last = this.corpses[this.corpses.length - 1];
+    const bodies = this.corpses.map((c) => ({ kind: (c === last && c.slots.some(Boolean) ? 'death' : 'oldBody') as 'death' | 'oldBody', x: c.x, z: c.z }));
+    return [{ kind: 'ship', x: SHIP.x, z: SHIP.z }, ...bodies, ...this.droppedBags.filter((b) => b.beacon).map((b) => ({ kind: 'bag' as const, x: b.x, z: b.z }))];
   }
 
   toggleMap(open = !this.bigMap.open): void {
@@ -405,6 +505,11 @@ export class App {
   private update(dt: number): void {
     this.elapsed += dt;
     this.input.setTime(this.elapsed);
+    if (this.dying) {
+      this.updateDeath(dt);
+      this.input.endFrame();
+      return;
+    }
     if (this.input.wasPressed('KeyM') && !this.inventory.open && !this.shipScreen.open) this.toggleMap();
     if ((this.input.wasPressed('Tab') || this.input.wasPressed('KeyI')) && !this.shipScreen.open && !this.bigMap.open) {
       if (this.inventory.open) this.closeScreens();
@@ -449,6 +554,8 @@ export class App {
       loadRatio: loadRatioOf(this.loadout),
     });
     if (inp.wasPressed('KeyV')) this.rig.swapShoulder();
+    this.updateBody(dt);
+    if (this.dying) { inp.endFrame(); return; }
     this.tools.update(dt, (b) => inp.held(b), (b) => inp.pressedAny(b), this.camera.position, this.rig.viewDir());
 
     const p = this.player;
@@ -500,7 +607,7 @@ export class App {
       heading: p.heading,
       stamina: p.stamina.value / 100,
       exhausted: p.stamina.exhausted,
-      oxygen: null,
+      oxygen: this.elapsed - this.lastDrain < 3 || this.body.oxygen < 0.999 && this.body.draining ? this.body.oxygen : null,
       battery: light && light.on ? light.charge ?? 0 : null,
       arms: armViews(this.loadout, name),
       belt: beltViews(this.loadout, name),

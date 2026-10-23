@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { KINDS } from '../src/core/catalog';
 import { emptyLoadout, starterPack } from '../src/core/gear';
-import { carriedKg, carryLimit, depositAll, dropBag, nestBag, pickUp, takeBag } from '../src/core/inventory';
+import { carriedKg, carryLimit, depositAll, dropBag, nestBag, pickUp, takeBag, takeFromRemains } from '../src/core/inventory';
 import { ScanLog } from '../src/core/scanlog';
 
 describe('ข้อความสแกน', () => {
@@ -83,5 +83,20 @@ describe('กระเป๋าและน้ำหนัก', () => {
     expect(bag.contents.items).toHaveLength(1);
     expect(takeBag(l, bag)).toBe(true);
     expect(carriedKg(l)).toBeGreaterThan(9.5);
+  });
+});
+
+describe('เก็บของจากซาก', () => {
+  it('ของที่เก็บกับกระเป๋าก่อน อุปกรณ์ซ้ำไม่เก็บ หมึกรวมกับของเดิม', () => {
+    const corpse = starterPack();
+    pickUp(corpse, { itemId: 'teddy', kg: 0.3 });
+    corpse.belt[7] = { kind: 'item', itemId: 'book', kg: 1.4 };
+    const mine = starterPack();
+    const left = takeFromRemains(mine, corpse.belt);
+    expect(left.filter(Boolean)).toHaveLength(0);
+    expect(mine.belt.filter((s) => s && s.kind === 'gear' && s.id === 'scanner')).toHaveLength(1);
+    expect(mine.belt.find((s) => s && s.kind === 'gear' && s.id === 'inkGun')).toMatchObject({ amount: 10 });
+    expect(mine.belt.filter((s) => s && s.kind === 'item')).toHaveLength(1);
+    expect(mine.belt.filter((s) => s && s.kind === 'gear' && s.id === 'bag')).toHaveLength(2);
   });
 });
