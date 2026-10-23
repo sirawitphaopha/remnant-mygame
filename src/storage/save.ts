@@ -13,14 +13,15 @@ export interface SaveData {
   savedAt: number;
   gameTime: number;
   bodyNumber: number;
-  player: { x: number; z: number; heading: number };
+  /** y = ความสูงเท้าตอนบันทึก (อยู่ในถ้ำหรือบนหลังคาจะได้โหลดกลับที่เดิม) */
+  player: { x: number; z: number; heading: number; y?: number };
   loadout: { belt: Slot[]; arms: (number | null)[] };
   shipChoice: ShipChoice;
   scanLog: string;
   explore: string;
   takenProps: string[];
-  corpses: { n: number; x: number; z: number; slots: Slot[] }[];
-  droppedBags: { x: number; z: number; bag: NestedBag; beacon: boolean }[];
+  corpses: { n: number; x: number; z: number; y?: number; slots: Slot[] }[];
+  droppedBags: { x: number; z: number; y?: number; bag: NestedBag; beacon: boolean }[];
   body: { oxygen: number; cracks: number; warmth: number };
 }
 
@@ -43,13 +44,44 @@ function storage(): Storage | null {
   }
 }
 
+/** เขียนบันทึก · คืน false ถ้าเบราว์เซอร์ไม่ให้เก็บหรือที่เก็บเต็ม (ผู้เรียกต้องบอกคนเล่น) */
 export function writeSave(d: SaveData): boolean {
+  const st = storage();
+  if (!st) return false;
   try {
-    storage()?.setItem(SAVE_KEY, JSON.stringify(d));
+    st.setItem(SAVE_KEY, JSON.stringify(d));
     return true;
   } catch {
     return false;
   }
+}
+
+/** เวลาที่บันทึกในเครื่องถูกเขียนล่าสุด (ไว้ดูว่ามีแท็บอื่นเขียนทับหรือไม่) · ไม่มีบันทึก = 0 */
+export function storedSavedAt(): number {
+  try {
+    const raw = storage()?.getItem(SAVE_KEY);
+    if (!raw) return 0;
+    const m = /"savedAt":(\d+)/.exec(raw);
+    return m ? Number(m[1]) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+const num = (v: unknown): v is number => typeof v === 'number' && isFinite(v);
+const arr = Array.isArray;
+
+/** ตรวจทุกช่องของบันทึก ช่องไหนผิดรูป = ถือว่าบันทึกเสีย (เริ่มใหม่ ไม่โหลดครึ่ง ๆ กลาง ๆ) */
+function valid(d: SaveData): boolean {
+  if (!d || d.version !== SAVE_VERSION || !num(d.gameTime) || !num(d.bodyNumber) || !num(d.savedAt)) return false;
+  if (!d.player || !num(d.player.x) || !num(d.player.z) || !num(d.player.heading)) return false;
+  if (!d.loadout || !arr(d.loadout.belt) || !arr(d.loadout.arms)) return false;
+  if (!d.shipChoice || typeof d.shipChoice !== 'object') return false;
+  if (typeof d.scanLog !== 'string' || typeof d.explore !== 'string' || !arr(d.takenProps)) return false;
+  if (!arr(d.corpses) || !d.corpses.every((c) => c && num(c.n) && num(c.x) && num(c.z) && arr(c.slots))) return false;
+  if (!arr(d.droppedBags) || !d.droppedBags.every((b) => b && num(b.x) && num(b.z) && b.bag && typeof b.bag === 'object')) return false;
+  if (!d.body || !num(d.body.oxygen) || !num(d.body.cracks) || !num(d.body.warmth)) return false;
+  return true;
 }
 
 /** อ่านบันทึก · ข้อมูลเสียหรือรุ่นไม่ตรง คืน null (เริ่มใหม่) */
@@ -58,8 +90,7 @@ export function readSave(): SaveData | null {
     const raw = storage()?.getItem(SAVE_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw) as SaveData;
-    if (!d || d.version !== SAVE_VERSION || typeof d.gameTime !== 'number' || !d.player || !Array.isArray(d.loadout?.belt)) return null;
-    return d;
+    return valid(d) ? d : null;
   } catch {
     return null;
   }

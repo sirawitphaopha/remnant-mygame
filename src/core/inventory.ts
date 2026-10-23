@@ -3,7 +3,7 @@ import { GEAR, SUIT_CARRY_KG, slotKg, type BagSize, type GearSlot, type Loadout 
 // กระเป๋า น้ำหนัก เก็บของ วางกระเป๋า ฝากของเข้ายาน · กติกาล้วน
 // พี่กันเคาะ: ทุกอย่างมีน้ำหนักเป็นกิโลกรัม · ใส่กระเป๋าซ้อนกระเป๋าได้ · วางกระเป๋าที่เต็มไว้ที่ไหนก็ได้ ขากลับค่อยมาหยิบ
 
-export interface CarriedItem { itemId: string; kg: number }
+export interface CarriedItem { itemId: string; kg: number; special?: boolean }
 export interface NestedBag { size: BagSize; contents: BagContents }
 export interface BagContents { items: CarriedItem[]; bags: NestedBag[] }
 
@@ -70,7 +70,7 @@ export function pickUp(l: Loadout, item: CarriedItem): PickResult {
   }
   const free = l.belt.indexOf(null);
   if (free >= 0) {
-    l.belt[free] = { kind: 'item', itemId: item.itemId, kg: item.kg };
+    l.belt[free] = { kind: 'item', itemId: item.itemId, kg: item.kg, ...(item.special ? { special: true } : {}) };
     return 'hand';
   }
   return 'full';
@@ -87,7 +87,7 @@ export function depositAll(l: Loadout): CarriedItem[] {
   l.belt.forEach((s, i) => {
     if (!s) return;
     if (s.kind === 'item') {
-      out.push({ itemId: s.itemId, kg: s.kg });
+      out.push({ itemId: s.itemId, kg: s.kg, ...(s.special ? { special: true } : {}) });
       l.belt[i] = null;
       const a = l.arms.indexOf(i);
       if (a >= 0) l.arms[a] = null;
@@ -159,6 +159,8 @@ export function bagContents(l: Loadout, index: number): BagContents | null {
 export function takeFromRemains(l: Loadout, slots: (Loadout['belt'][number])[]): (Loadout['belt'][number])[] {
   const left = slots.slice();
   const order = left.map((s, i) => ({ s, i })).filter((x) => x.s).sort((a, b) => rank(a.s) - rank(b.s));
+  // หยิบเท่าที่แบกไหว (ตรงกับ pickUp กับ takeBag) ชิ้นที่ไม่ไหวค้างที่ซาก ไม่หาย
+  const room = () => carryLimit(l) - carriedKg(l) + 1e-9;
   for (const { s, i } of order) {
     if (!s) continue;
     if (s.kind === 'gear' && s.id !== 'bag') {
@@ -166,14 +168,24 @@ export function takeFromRemains(l: Loadout, slots: (Loadout['belt'][number])[]):
       if (mine) {
         if (s.id === 'inkGun' || s.id === 'glueGun' || s.id === 'oxygenTank') {
           const max = s.id === 'inkGun' ? GEAR.inkGun.max : s.id === 'glueGun' ? GEAR.glueGun.max : GEAR.oxygenTank.max;
-          mine.amount = Math.min(max, (mine.amount ?? 0) + (s.amount ?? 0));
+          const unitKg = s.id === 'inkGun' ? GEAR.inkGun.shotKg : s.id === 'glueGun' ? GEAR.glueGun.shotKg : GEAR.oxygenTank.kg;
+          const want = Math.min(s.amount ?? 0, max - (mine.amount ?? 0));
+          const take = Math.max(0, Math.min(want, unitKg > 0 ? Math.floor(room() / unitKg) : want));
+          mine.amount = (mine.amount ?? 0) + take;
+          // ส่วนที่เกินเพดานของปืนหรือถัง ทิ้งได้เหมือนเดิม · ส่วนที่แบกไม่ไหวคงไว้ที่ซาก
+          const rest = want - take;
+          left[i] = rest > 0 ? { ...s, amount: rest } : null;
+        } else {
+          left[i] = null;
         }
-        left[i] = null;
         continue;
       }
     }
     const free = l.belt.indexOf(null);
-    if (free < 0) break;
+    if (free < 0) continue;
+    const add = slotKg(s) + (isBag(s) ? contentsKg(contentsOf(s)) : 0);
+    const extra = isBag(s) ? bagCap(s.bag ?? 'medium') : 0;
+    if (add > room() + extra) continue;
     l.belt[free] = s;
     left[i] = null;
   }

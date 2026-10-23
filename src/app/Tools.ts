@@ -22,7 +22,8 @@ export interface ToolsHost {
   scene: THREE.Scene;
   hero: HeroModel;
   loadout: Loadout;
-  heightAt(x: number, z: number): number;
+  /** พื้นใต้จุดนั้นที่ความสูง y (รู้จักถ้ำกับหลังคา) */
+  groundAt(x: number, z: number, y: number): number;
   toast(text: string, kind?: '' | 'warn' | 'danger'): void;
   /** หาของที่สแกนได้ในทิศที่มอง */
   findScanTarget(origin: THREE.Vector3, dir: THREE.Vector3): ScanTarget | null;
@@ -58,6 +59,8 @@ export class Tools {
   scanProgress = 0;
   scanTarget: ScanTarget | null = null;
   scanning = false;
+  /** แขนที่กำลังสแกน (ไว้บอกปุ่มที่ถูกในป้ายกลางจอ) */
+  scanArm = 0;
   aiming = false;
   private tmpA = new THREE.Vector3();
 
@@ -82,7 +85,7 @@ export class Tools {
       const isPressed = pressed(btn);
       switch (s.id) {
         case 'scanner':
-          if (isDown) this.scan(dt, viewOrigin, viewDir);
+          if (isDown) { this.scanArm = arm; this.scan(dt, viewOrigin, viewDir); }
           break;
         case 'flashlight':
           if (isPressed) {
@@ -167,7 +170,7 @@ export class Tools {
       b.mesh.position.addScaledVector(b.vel, dt);
       b.life -= dt;
       const p = b.mesh.position;
-      const gy = this.host.heightAt(p.x, p.z);
+      const gy = this.host.groundAt(p.x, p.z, p.y);
       if (p.y <= gy + 0.05 || b.life <= 0) {
         b.life = -1;
         this.host.onInk(p.x, gy, p.z);

@@ -36,6 +36,8 @@ export interface ItemSlot {
   kind: 'item';
   itemId: string;
   kg: number;
+  /** ชิ้นพิเศษที่มีบันทึกส่วนตัว (ชั้น 3) · ฝากเข้ายานแล้วปลดชั้น 3 ให้ */
+  special?: boolean;
 }
 
 export type Slot = GearSlot | ItemSlot | null;

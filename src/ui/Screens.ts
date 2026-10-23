@@ -4,7 +4,7 @@ import { GEAR, buildLoadout, choiceSlots, held, slotKg, type Loadout, type ShipC
 import { bagCap, bagContents, carriedKg, carryLimit, contentsKg, isBag } from '../core/inventory';
 import type { ScanLog } from '../core/scanlog';
 import { ICONS } from './icons';
-import { getLang, onLangChange, t, type StrKey } from './strings';
+import { getLang, onLangChange, t, tf, type StrKey } from './strings';
 
 /** ช่องดูโมเดล (สร้างจากชั้นภาพ ส่งเข้ามา) */
 export interface Viewer {
@@ -18,7 +18,7 @@ export interface BodyView { cracks: number; oxygen: number; cold: boolean }
 const ARM_KEYS = ['keyLeft', 'keyRight', 'Q', 'R'] as const;
 const ARM_NAMES: StrKey[] = ['armUR', 'armUL', 'armLR', 'armLL'];
 const CATS: { id: Category | 'all'; key: StrKey }[] = [
-  { id: 'all', key: 'catAll' }, { id: 'human', key: 'catHuman' }, { id: 'animal', key: 'catAnimal' }, { id: 'plant', key: 'catPlant' }, { id: 'self', key: 'catSelf' },
+  { id: 'all', key: 'catAll' }, { id: 'human', key: 'catHuman' }, { id: 'animal', key: 'catAnimal' }, { id: 'plant', key: 'catPlant' }, { id: 'nature', key: 'catNature' }, { id: 'self', key: 'catSelf' },
 ];
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -74,10 +74,12 @@ export class InventoryScreen {
   private selectedBelt: number | null = null;
   private cat: Category | 'all' = 'all';
   private selectedKind: string | null = null;
-  private data!: { loadout: Loadout; log: ScanLog; body: BodyView };
+  private data!: { loadout: Loadout; log: ScanLog; body: BodyView; viewOnly?: boolean };
 
   constructor(parent: HTMLElement, private viewer: Viewer, private act: InventoryActions) {
     this.root = el('<div class="holo inv"></div>');
+    this.root.setAttribute('role', 'dialog');
+    this.root.setAttribute('aria-modal', 'true');
     parent.appendChild(this.root);
     this.root.addEventListener('click', (e) => this.onClick(e));
     this.root.addEventListener('dragstart', (e) => {
@@ -95,8 +97,9 @@ export class InventoryScreen {
 
   get open(): boolean { return !this.root.hidden; }
 
-  show(tab: 'bag' | 'collection', data: { loadout: Loadout; log: ScanLog; body: BodyView }): void {
-    this.tab = tab;
+  /** viewOnly = เปิดจากหน้าแรก ดูคอลเลกชันได้อย่างเดียว ไม่มีแท็บกระเป๋า (กันวางกระเป๋าผีจากหน้าแรก) */
+  show(tab: 'bag' | 'collection', data: { loadout: Loadout; log: ScanLog; body: BodyView; viewOnly?: boolean }): void {
+    this.tab = data.viewOnly ? 'collection' : tab;
     this.data = data;
     if (this.bagSlot < 0 || !isBag(data.loadout.belt[this.bagSlot])) this.bagSlot = data.loadout.belt.findIndex((s) => isBag(s));
     this.root.hidden = false;
@@ -114,7 +117,7 @@ export class InventoryScreen {
     if (!b) return;
     const v = b.dataset.v ?? '';
     switch (b.dataset.act) {
-      case 'tab': this.tab = v as 'bag' | 'collection'; break;
+      case 'tab': if (!this.data.viewOnly) this.tab = v as 'bag' | 'collection'; break;
       case 'close': this.act.close(); return;
       case 'bag': this.bagSlot = Number(v); this.selectedItem = null; break;
       case 'item': this.selectedItem = v; break;
@@ -130,18 +133,24 @@ export class InventoryScreen {
   }
 
   render(): void {
+    const viewOnly = !!this.data.viewOnly;
     const head = `
       <div class="holo-head">
         <div class="tabs">
-          <button type="button" class="tab ${this.tab === 'bag' ? 'on' : ''}" data-act="tab" data-v="bag">${t('tabBag')}</button>
+          ${viewOnly ? '' : `<button type="button" class="tab ${this.tab === 'bag' ? 'on' : ''}" data-act="tab" data-v="bag">${t('tabBag')}</button>`}
           <button type="button" class="tab ${this.tab === 'collection' ? 'on' : ''}" data-act="tab" data-v="collection">${t('tabCollection')}</button>
         </div>
         ${this.tab === 'collection' ? `<div class="tabs">${CATS.map((c) => `<button type="button" class="tab ${this.cat === c.id ? 'on' : ''}" data-act="cat" data-v="${c.id}">${t(c.key)}</button>`).join('')}</div>` : ''}
         <span class="spacer"></span>
-        <button type="button" class="btn" data-act="close">${t('closeTab')}<kbd>Tab</kbd></button>
+        <button type="button" class="btn" data-act="close">${t('closeTab')}<kbd>${viewOnly ? 'Esc' : 'Tab'}</kbd></button>
       </div>`;
     const holo = this.root.querySelector('.holo') as HTMLDivElement;
+    // วาดใหม่ทั้งหน้าต่างทุกคลิก จำตำแหน่งเลื่อนของแต่ละกล่องไว้คืน (เดิมเด้งกลับบนสุดทุกครั้ง)
+    const keep = [...holo.querySelectorAll<HTMLElement>('.panel')].map((p) => p.scrollTop);
+    const sameTab = holo.dataset.tab === this.tab;
     holo.innerHTML = head + (this.tab === 'bag' ? this.bagHtml() : this.collectionHtml());
+    holo.dataset.tab = this.tab;
+    if (sameTab) holo.querySelectorAll<HTMLElement>('.panel').forEach((p, i) => { p.scrollTop = keep[i] ?? 0; });
     const vh = holo.querySelector('.viewer-host');
     const kindToShow = this.tab === 'bag' ? this.selectedItem : this.selectedKind;
     if (vh && kindToShow) {
@@ -184,11 +193,12 @@ export class InventoryScreen {
           <h4>${t('armSlots')}</h4>
           <div class="arm-list">${[0, 1, 2, 3].map((a) => {
             const s = held(l, a);
-            const name = s ? (s.kind === 'gear' ? (s.id === 'bag' ? t('short_bag') : t(s.id as StrKey)) : kindName(s.itemId)) : t('empty');
+            // ของชิ้นเล็กใช้ชื่อตามชั้นที่ปลดแล้ว (เดิมขึ้นชื่อจริงก่อนเวลา และไม่ตรงกับป้ายบนจอ)
+            const name = s ? (s.kind === 'gear' ? (s.id === 'bag' ? t('short_bag') : t(s.id as StrKey)) : kindOf(s.itemId) ? shownName(kindOf(s.itemId)!, this.data.log.truth(s.itemId)) : kindName(s.itemId)) : t('empty');
             const key = a < 2 ? t(ARM_KEYS[a] as StrKey) : ARM_KEYS[a];
             return `<button type="button" class="arm ${a === 0 ? 'main' : ''} ${this.selectedBelt !== null ? 'target' : ''}" data-act="arm" data-arm="${a}" data-v="${a}"><kbd>${key}</kbd><span class="what">${esc(name)}<small>${t(ARM_NAMES[a])}</small></span></button>`;
           }).join('')}</div>
-          <div class="belt-mini">${l.belt.map((s, i) => `<button type="button" draggable="${s ? 'true' : 'false'}" class="slot ${s ? '' : 'empty'} ${l.arms.includes(i) ? 'inarm' : ''} ${this.selectedBelt === i ? 'sel' : ''}" data-act="belt" data-belt="${i}" data-v="${i}"><span class="n">${i + 1}</span>${s ? (s.kind === 'gear' ? ICONS[s.id] : ICONS.item) : ''}</button>`).join('')}</div>
+          <div class="belt-mini">${l.belt.map((s, i) => `<button type="button" draggable="${s ? 'true' : 'false'}" class="slot ${s ? '' : 'empty'} ${l.arms.includes(i) ? 'inarm' : ''} ${this.selectedBelt === i ? 'sel' : ''}" data-act="belt" data-belt="${i}" data-v="${i}" aria-label="${i + 1} ${s ? esc(s.kind === 'gear' ? (s.id === 'bag' ? t('short_bag') : t(s.id as StrKey)) : kindOf(s.itemId) ? shownName(kindOf(s.itemId)!, this.data.log.truth(s.itemId)) : '') : t('empty')}"><span class="n">${i + 1}</span>${s ? (s.kind === 'gear' ? ICONS[s.id] : ICONS.item) : ''}</button>`).join('')}</div>
           <h4 style="margin-top:14px">${t('body')}</h4>
           <div class="body-stat">${this.data.body.cracks ? `${t('jarCracks')} ${this.data.body.cracks}` : t('jarOk')}<br>${t('jarO2')} ${Math.round(this.data.body.oxygen * 100)}%<br>${t('temp')} ${this.data.body.cold ? t('tempCold') : t('tempOk')}</div>
         </div>
@@ -206,7 +216,7 @@ export class InventoryScreen {
           ${list.map((k) => {
             const r = log.records.get(k.id);
             return known(k)
-              ? `<button type="button" class="citem ${this.selectedKind === k.id ? 'on' : ''}" data-act="kind" data-v="${k.id}">${ICONS[k.small ? 'item' : 'scanner']}<span>${esc(shownName(k, log.truth(k.id)))}</span><span class="st">${t('layer1').split(' ')[0]} ${log.layer(k.id)}${r && r.deposited ? ` · ${t('deposited')} ${r.deposited}` : ''}</span></button>`
+              ? `<button type="button" class="citem ${this.selectedKind === k.id ? 'on' : ''}" data-act="kind" data-v="${k.id}">${ICONS[k.small ? 'item' : 'scanner']}<span>${esc(shownName(k, log.truth(k.id)))}</span><span class="st">${tf('layerN', { n: log.layer(k.id) })}${r && r.deposited ? ` · ${tf('depositedCount', { n: r.deposited })}` : ''}</span></button>`
               : `<div class="citem unknown">${ICONS.item}<span>${t('unknown')}</span></div>`;
           }).join('')}
         </div></div>
@@ -228,10 +238,13 @@ export interface ShipActions {
 export class ShipScreen {
   readonly root: HTMLDivElement;
   choice!: ShipChoice;
-  private note = '';
+  /** ข้อความบนหน้ายาน เก็บเป็นตัวสร้างข้อความ เปลี่ยนภาษาแล้ววาดใหม่ตามภาษาใหม่ได้ */
+  private note: () => string = () => '';
 
   constructor(parent: HTMLElement, private act: ShipActions) {
     this.root = el('<div class="holo ship"></div>');
+    this.root.setAttribute('role', 'dialog');
+    this.root.setAttribute('aria-modal', 'true');
     parent.appendChild(this.root);
     this.root.addEventListener('click', (e) => this.onClick(e));
     onLangChange(() => { if (this.open) this.render(); });
@@ -239,9 +252,9 @@ export class ShipScreen {
 
   get open(): boolean { return !this.root.hidden; }
 
-  show(choice: ShipChoice, note: string): void {
+  show(choice: ShipChoice, note: string | (() => string)): void {
     this.choice = choice;
-    this.note = note;
+    this.note = typeof note === 'function' ? note : () => note;
     this.root.hidden = false;
     this.render();
   }
@@ -257,7 +270,7 @@ export class ShipScreen {
     switch (b.dataset.act) {
       case 'toggle': {
         const k = v as 'scanner' | 'flashlight' | 'inkGun' | 'glueGun' | 'climber';
-        if (!c[k] && full) { this.note = t('slotsFull'); break; }
+        if (!c[k] && full) { this.note = () => t('slotsFull'); break; }
         c[k] = !c[k];
         break;
       }
@@ -265,7 +278,7 @@ export class ShipScreen {
       case 'glue': c.glue = Math.max(0, Math.min(GEAR.glueGun.max, c.glue + Number(v))); if (c.glue > 0) c.glueGun = true; break;
       case 'tanks': {
         const next = Math.max(0, Math.min(GEAR.oxygenTank.max, c.tanks + Number(v)));
-        if (c.tanks === 0 && next > 0 && full) { this.note = t('slotsFull'); break; }
+        if (c.tanks === 0 && next > 0 && full) { this.note = () => t('slotsFull'); break; }
         c.tanks = next;
         break;
       }
@@ -273,7 +286,7 @@ export class ShipScreen {
         const size = v as 'small' | 'medium' | 'large';
         const i = c.bags.indexOf(size);
         if (i >= 0) c.bags.splice(i, 1);
-        else if (full) this.note = t('slotsFull');
+        else if (full) this.note = () => t('slotsFull');
         else c.bags.push(size);
         break;
       }
@@ -290,23 +303,23 @@ export class ShipScreen {
     const limit = carryLimit(l);
     const row = (act: string, v: string, icon: string, name: string, sub: string, taken: boolean, kgv: number, extra = '') =>
       `<div class="stock-row ${taken ? 'taken' : ''}"><button type="button" class="stock-main" data-act="${act}" data-v="${v}">${ICONS[icon]}<span>${name}<small>${sub}</small></span></button>${extra}<span class="w">${kgv.toFixed(1)} ${t('kg')}</span></div>`;
-    const stepper = (act: string, value: number, max: number) =>
-      `<span class="stepper"><button type="button" class="btn mini" data-act="${act}" data-v="-1" aria-label="−">−</button><span class="num">${value}/${max}</span><button type="button" class="btn mini" data-act="${act}" data-v="1" aria-label="+">+</button></span>`;
+    const stepper = (act: string, value: number, max: number, what: string) =>
+      `<span class="stepper"><button type="button" class="btn mini" data-act="${act}" data-v="-1" aria-label="${esc(tf('stepLess', { what }))}" ${value <= 0 ? 'disabled' : ''}>−</button><span class="num">${value}/${max}</span><button type="button" class="btn mini" data-act="${act}" data-v="1" aria-label="${esc(tf('stepMore', { what }))}" ${value >= max ? 'disabled' : ''}>+</button></span>`;
     const tk = (b: boolean) => (b ? t('taken') : t('notTaken'));
     const holo = this.root.querySelector('.holo') as HTMLDivElement;
     holo.innerHTML = `
       <div class="holo-head"><h2>${t('shipTitle')}</h2><span class="sub">${t('shipSub')}</span><span class="spacer"></span>
         <button type="button" class="btn" data-act="starter">${t('starter')}</button>
         <button type="button" class="btn primary" data-act="depart">${t('depart')}</button></div>
-      ${this.note ? `<div class="ship-note">${esc(this.note)}</div>` : ''}
+      ${this.note() ? `<div class="ship-note">${esc(this.note())}</div>` : ''}
       <div class="cols ship-cols">
         <div class="panel"><h4>${t('shipStock')}</h4><div class="stock">
           ${row('toggle', 'scanner', 'scanner', t('scanner'), tk(c.scanner), c.scanner, GEAR.scanner.kg)}
           ${row('toggle', 'flashlight', 'flashlight', t('flashlight'), `${tk(c.flashlight)} · ${t('charge')} 100%`, c.flashlight, GEAR.flashlight.kg)}
-          ${row('toggle', 'inkGun', 'inkGun', t('inkGun'), tk(c.inkGun), c.inkGun, GEAR.inkGun.kg + c.ink * GEAR.inkGun.shotKg, stepper('ink', c.ink, GEAR.inkGun.max))}
-          ${row('toggle', 'glueGun', 'glueGun', t('glueGun'), tk(c.glueGun), c.glueGun, GEAR.glueGun.kg + c.glue * GEAR.glueGun.shotKg, stepper('glue', c.glue, GEAR.glueGun.max))}
+          ${row('toggle', 'inkGun', 'inkGun', t('inkGun'), tk(c.inkGun), c.inkGun, GEAR.inkGun.kg + c.ink * GEAR.inkGun.shotKg, stepper('ink', c.ink, GEAR.inkGun.max, t('ink')))}
+          ${row('toggle', 'glueGun', 'glueGun', t('glueGun'), tk(c.glueGun), c.glueGun, GEAR.glueGun.kg + c.glue * GEAR.glueGun.shotKg, stepper('glue', c.glue, GEAR.glueGun.max, t('glue')))}
           ${row('toggle', 'climber', 'climber', t('climber'), tk(c.climber), c.climber, GEAR.climber.kg)}
-          ${row('tanks', '1', 'oxygenTank', t('oxygenTank'), `${c.tanks} ${t('tanks')}`, c.tanks > 0, GEAR.oxygenTank.kg * c.tanks, stepper('tanks', c.tanks, GEAR.oxygenTank.max))}
+          ${row('tanks', '1', 'oxygenTank', t('oxygenTank'), `${c.tanks} ${t(c.tanks === 1 ? 'tank' : 'tanks')}`, c.tanks > 0, GEAR.oxygenTank.kg * c.tanks, stepper('tanks', c.tanks, GEAR.oxygenTank.max, t('oxygenTank')))}
           ${(['small', 'medium', 'large'] as const).map((b) => row('bag', b, 'bag', t(b === 'small' ? 'bagSmall' : b === 'large' ? 'bagLarge' : 'bagMedium'), `${t('capKg')} ${GEAR.bag[b].capKg} ${t('kg')}`, c.bags.includes(b), GEAR.bag[b].kg)).join('')}
         </div></div>
         <div class="panel"><h4>${t('willCarry')}</h4>

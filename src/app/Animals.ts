@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { disposeObject } from '../render/dispose';
 import { WORLD } from '../config/game';
 import { ATTACK_COOLDOWN, ATTACK_RANGE, SPECIES, currentSpeed, decide, inkHit, newMind, type AnimalMind, type Species } from '../core/animals';
 import { animalModel, type AnimalModel } from '../render/models/animals';
@@ -35,6 +36,8 @@ export class Animals {
   readonly group = new THREE.Group();
   readonly list: Animal[] = [];
   private seq = 0;
+  /** ต่อหน้ารหัสสัตว์ ให้ตัวที่เกิดหลังเปิดเกมใหม่ไม่ซ้ำกับตัวที่เคยสแกน */
+  private readonly tag = Math.floor(Math.random() * 36 ** 4).toString(36);
   private fireflies: THREE.Points;
   private firePos: Float32Array;
   private fireSeed: Float32Array;
@@ -86,7 +89,7 @@ export class Animals {
 
   /** สัตว์ที่อยู่ใกล้จุดนี้ (สแกน) */
   scanTargets(): { key: string; kind: string; x: number; y: number; z: number }[] {
-    return this.list.filter((a) => a.model).map((a) => ({ key: `animal-${a.id}`, kind: a.s.id, x: a.x, y: a.y + Math.max(0.15, a.s.height), z: a.z }));
+    return this.list.filter((a) => a.model).map((a) => ({ key: `animal-${this.tag}-${a.id}`, kind: a.s.id, x: a.x, y: a.y + Math.max(0.15, a.s.height), z: a.z }));
   }
 
   /** หมึกตกตรงนี้ · สัตว์ในรัศมีโดนหมึก */
@@ -114,7 +117,7 @@ export class Animals {
       const a = this.list[i];
       const active = a.s.active === 'always' || (a.s.active === 'night') === night;
       if (Math.hypot(a.x - px, a.z - pz) > 150 || (!active && Math.hypot(a.x - px, a.z - pz) > 50)) {
-        if (a.model) this.group.remove(a.model.root);
+        if (a.model) disposeObject(a.model.root);
         this.list.splice(i, 1);
       }
     }
@@ -214,7 +217,7 @@ export class Animals {
   }
 
   /** หิ่งห้อยที่ใกล้สุด (สแกน) */
-  nearestFirefly(px: number, pz: number): { x: number; y: number; z: number } | null {
+  nearestFirefly(px: number, pz: number): { i: number; x: number; y: number; z: number } | null {
     if (!this.fireflies.visible) return null;
     let best = -1;
     let bd = 12;
@@ -222,7 +225,7 @@ export class Animals {
       const d = Math.hypot(this.firePos[i * 3] - px, this.firePos[i * 3 + 2] - pz);
       if (d < bd) { bd = d; best = i; }
     }
-    return best < 0 ? null : { x: this.firePos[best * 3], y: this.firePos[best * 3 + 1], z: this.firePos[best * 3 + 2] };
+    return best < 0 ? null : { i: best, x: this.firePos[best * 3], y: this.firePos[best * 3 + 1], z: this.firePos[best * 3 + 2] };
   }
 
   /** ตัวช่วยทดสอบ: วางสัตว์ชนิดนั้นตรงจุดนั้น */

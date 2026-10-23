@@ -8,7 +8,7 @@ const th = {
   oxygen: 'ออกซิเจน',
   battery: 'แบตไฟฉาย',
   minimapHint: 'กด M ดูแผนที่จอใหญ่',
-  compassN: 'น.', compassNE: 'ตอ.น.', compassE: 'อ.', compassSE: 'ตอ.ต.', compassS: 'ต.', compassSW: 'ตต.ต.', compassW: 'ตต.', compassNW: 'ตต.น.',
+  compassN: 'น.', compassNE: 'ตอ.น.', compassE: 'ตอ.', compassSE: 'ตอ.ต.', compassS: 'ต.', compassSW: 'ตต.ต.', compassW: 'ตต.', compassNW: 'ตต.น.',
   armUR: 'แขนบนขวา', armUL: 'แขนบนซ้าย', armLR: 'แขนล่างขวา', armLL: 'แขนล่างซ้าย',
   main: 'หลัก',
   empty: 'ว่าง',
@@ -39,7 +39,7 @@ const th = {
   shipTitle: 'ยาน · เตรียมออกสำรวจ', shipSub: 'ยานจำลองอุปกรณ์ได้ไม่จำกัด', starter: 'แพ็กเกจเริ่มต้น', depart: 'ออกเดินทาง',
   shipStock: 'ของในยาน · คลิกเพื่อหยิบหรือวางคืน · กด + − เพื่อกำหนดจำนวน', willCarry: 'จะพกไป · แถบล่าง 9 ช่อง', armsOnDepart: 'ใส่แขนไว้ตอนออกจากยาน', carryWeight: 'น้ำหนักที่แบก',
   taken: 'หยิบแล้ว', notTaken: 'ยังไม่หยิบ', capKg: 'รับได้', weightNote: 'ยิ่งหนัก แรงยิ่งลดเร็วตอนวิ่ง ว่าย และปีน · เกินที่แบกได้จะเก็บของเพิ่มไม่ได้', slotsFull: 'แถบล่างเต็ม 9 ช่องแล้ว',
-  warmth: 'อุ่นร่างกาย', warmOk: 'อยู่ในยาน · อุ่นเต็มแล้ว', depositedN: 'ฝากของเข้าคอลเลกชันแล้ว', nothingDeposited: 'ไม่มีของให้ฝาก',
+  warmth: 'อุ่นร่างกาย', warmOk: 'อยู่ในยาน · อุ่นเต็มแล้ว', depositedN: 'ฝากของเข้าคอลเลกชันแล้ว {n} ชิ้น', nothingDeposited: 'ไม่มีของให้ฝาก',
   // ในโลก
   pick: 'เก็บ', enterShip: 'เข้ายาน', takeBag: 'หยิบกระเป๋า', beacon: 'ส่งสัญญาณเข้าแผนที่', beaconOn: 'กระเป๋าส่งสัญญาณแล้ว', bagFull: 'แบกไม่ไหวแล้ว ต้องกลับยานไปเก็บของก่อน',
   pickedBag: 'เก็บใส่กระเป๋าแล้ว', pickedHand: 'ถือไว้ในแถบล่าง', bagDropped: 'วางกระเป๋าไว้แล้ว อย่าลืมกดส่งสัญญาณ', newLayer: 'ปลดล็อก', scanTarget: 'กำลังมอง',
@@ -69,6 +69,19 @@ const th = {
   mapNote2: 'พื้นที่มืดคือที่ยังไม่เคยไป',
   ship: 'ยาน',
   km: 'กม.',
+  // รอบสอง ช่วง 0 (แก้จากผลตรวจ)
+  logUnlocked: 'ได้บันทึกส่วนตัวของชิ้นนี้แล้ว',
+  nestFailed: 'ใส่ซ้อนไม่ได้ ไม่มีกระเป๋าใบไหนรับน้ำหนักนี้ไหว',
+  unnestFailed: 'แถบล่างเต็ม ไม่มีช่องให้วางกระเป๋า',
+  saveFailed: 'บันทึกในเบราว์เซอร์นี้ไม่ได้ ความคืบหน้าจะไม่ถูกเก็บ',
+  otherTab: 'เกมนี้เปิดอยู่อีกแท็บ แท็บนี้หยุดบันทึกเพื่อไม่ให้ทับกัน',
+  quitNoSave: 'ปิดแท็บนี้ได้เลย',
+  clickToPlay: 'คลิกจอเพื่อควบคุมกล้อง',
+  tank: 'ถัง',
+  catNature: 'ธรรมชาติ',
+  crackStatus: 'โหลร้าว {n} จุด · ใช้ปืนกาวอุด',
+  gearCount: 'อุปกรณ์ {n} ชิ้น', itemsCount: 'ของที่เก็บ {n} ชิ้น',
+  layerN: 'ชั้นที่ {n}', depositedCount: 'อยู่ในยาน {n}', stepLess: 'ลด{what}', stepMore: 'เพิ่ม{what}',
 } as const;
 
 export type StrKey = keyof typeof th;
@@ -106,7 +119,7 @@ const en: Record<StrKey, string> = {
   shipTitle: 'Ship · Expedition Prep', shipSub: 'The ship can replicate gear without limit', starter: 'Starter Pack', depart: 'Depart',
   shipStock: 'SHIP STOCK · click to take or return · use + − to set amounts', willCarry: 'LOADOUT · 9-SLOT BELT', armsOnDepart: 'ARMS ON DEPARTURE', carryWeight: 'CARRY WEIGHT',
   taken: 'Taken', notTaken: 'Not taken', capKg: 'holds', weightNote: 'The heavier you are, the faster stamina drains when running, swimming and climbing. Over the limit, you cannot pick up more.', slotsFull: 'All 9 belt slots are full',
-  warmth: 'WARMTH', warmOk: 'Inside ship · fully warm', depositedN: 'Deposited into collection', nothingDeposited: 'Nothing to deposit',
+  warmth: 'WARMTH', warmOk: 'Inside ship · fully warm', depositedN: 'Items deposited into the collection: {n}', nothingDeposited: 'Nothing to deposit',
   pick: 'Pick up', enterShip: 'Enter ship', takeBag: 'Take bag', beacon: 'Send beacon to map', beaconOn: 'Bag beacon sent', bagFull: 'Too heavy. Return to the ship to store your finds.',
   pickedBag: 'Put in bag', pickedHand: 'Holding in belt', bagDropped: 'Bag dropped. Remember to send its beacon.', newLayer: 'Unlocked', scanTarget: 'Looking at',
   cold: 'Cold · frost is creeping across the glass', cracked: 'Jar cracked', sealWithGlue: 'seal with Glue Gun', oxygenLow: 'Jar oxygen is dropping',
@@ -132,6 +145,18 @@ const en: Record<StrKey, string> = {
   mapNote2: 'Dark areas are unexplored.',
   ship: 'Ship',
   km: 'km',
+  logUnlocked: 'Personal log unlocked',
+  nestFailed: "Can't nest it · no bag can hold that much",
+  unnestFailed: 'Belt full · no free slot for the bag',
+  saveFailed: "Can't save in this browser · progress won't be kept",
+  otherTab: "The game is open in another tab · this tab stopped saving so they don't overwrite each other",
+  quitNoSave: 'You can close this tab.',
+  clickToPlay: 'Click the screen to control the camera',
+  tank: 'tank',
+  catNature: 'Nature',
+  crackStatus: 'Jar cracked in {n} places · seal with the Glue Gun',
+  gearCount: 'Gear: {n}', itemsCount: 'Finds: {n}',
+  layerN: 'Layer {n}', depositedCount: '{n} in ship', stepLess: 'Less {what}', stepMore: 'More {what}',
 };
 
 const TABLE: Record<Lang, Record<StrKey, string>> = { th, en };
@@ -156,6 +181,11 @@ export function onLangChange(f: () => void): void {
 /** ข้อความตามภาษาที่เลือก */
 export function t(key: StrKey): string {
   return TABLE[lang][key];
+}
+
+/** ข้อความที่มีช่องใส่ค่า เช่น 'ฝากแล้ว {n} ชิ้น' */
+export function tf(key: StrKey, vars: Record<string, string | number>): string {
+  return t(key).replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''));
 }
 
 /** ใช้ตอนทดสอบ: ทุกคำต้องมีครบสองภาษา */

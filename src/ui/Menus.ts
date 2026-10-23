@@ -8,7 +8,8 @@ export interface TitleActions {
   newGame(): void;
   openCollection(): void;
   openSettings(): void;
-  quit(): void;
+  /** คืน true ถ้าบันทึกสำเร็จ (ยังไม่ได้เล่น = ไม่ได้บันทึกอะไร) */
+  quit(): boolean;
 }
 
 export interface ContinueInfo { body: number; day: number; found: number }
@@ -17,7 +18,8 @@ export class TitleScreen {
   readonly root: HTMLDivElement;
   private info: ContinueInfo | null = null;
   private confirmNew = false;
-  private note = '';
+  /** ข้อความใต้เมนู เก็บเป็นชื่อคำ เปลี่ยนภาษาแล้ววาดเป็นภาษาใหม่ */
+  private note: StrKey | null = null;
 
   constructor(parent: HTMLElement, private act: TitleActions) {
     this.root = document.createElement('div');
@@ -27,7 +29,7 @@ export class TitleScreen {
       const b = (e.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
       if (!b) return;
       const a = b.dataset.act;
-      if (a !== 'new') this.confirmNew = false;
+      if (a !== 'new' && this.confirmNew) { this.confirmNew = false; this.render(); }
       if (a === 'continue') this.act.continueGame();
       else if (a === 'new') {
         if (this.info && !this.confirmNew) { this.confirmNew = true; this.render(); return; }
@@ -35,7 +37,7 @@ export class TitleScreen {
         this.act.newGame();
       } else if (a === 'collection') this.act.openCollection();
       else if (a === 'settings') this.act.openSettings();
-      else if (a === 'quit') { this.act.quit(); this.note = t('quitNote'); this.render(); }
+      else if (a === 'quit') { this.note = this.act.quit() ? 'quitNote' : 'quitNoSave'; this.render(); }
     });
     onLangChange(() => this.render());
   }
@@ -44,7 +46,7 @@ export class TitleScreen {
 
   show(info: ContinueInfo | null): void {
     this.info = info;
-    this.note = '';
+    this.note = null;
     this.root.hidden = false;
     this.render();
   }
@@ -64,9 +66,9 @@ export class TitleScreen {
           <button type="button" data-act="settings">${t('settings')}</button>
           <button type="button" data-act="quit">${t('quitGame')}</button>
         </nav>
-        ${this.note ? `<div class="title-note">${this.note}</div>` : ''}
+        ${this.note ? `<div class="title-note">${t(this.note)}</div>` : ''}
       </div>
-      <div class="version">${t('demoVer')} 0.1.0</div>`;
+      <div class="version">${t('demoVer')} ${__APP_VERSION__}</div>`;
   }
 }
 
@@ -89,6 +91,8 @@ export class SettingsScreen {
   constructor(parent: HTMLElement, private act: SettingsActions) {
     this.root = document.createElement('div');
     this.root.className = 'overlay';
+    this.root.setAttribute('role', 'dialog');
+    this.root.setAttribute('aria-modal', 'true');
     this.root.hidden = true;
     this.root.innerHTML = '<div class="holo settings"></div>';
     parent.appendChild(this.root);

@@ -41,6 +41,8 @@ export interface HudView {
   markers: MapMarker[];
   prompt: { key: string; text: string } | null;
   reticle: boolean;
+  /** ป้ายสถานะค้างมุมซ้ายบน (โหลร้าว หนาว ออกซิเจนลด) อยู่จนกว่าสถานะหาย ตามมอคอัปหน้า 3 */
+  status?: { text: string; kind: 'warn' | 'danger' | '' }[];
 }
 
 const MARKER_COLOR: Record<MarkerKind, string> = { ship: '#6ff0e0', death: '#ff7070', oldBody: 'rgba(255,255,255,.55)', bag: '#c7a5ff' };
@@ -68,17 +70,22 @@ export class Hud {
   private slotEls: HTMLDivElement[] = [];
   private beltHint: HTMLDivElement;
   private toastBox: HTMLDivElement;
+  private statusBox: HTMLDivElement;
+  private lastStatus = '';
   private promptEl: HTMLDivElement;
   private reticleEl: HTMLDivElement;
   private lastArms = '';
   private lastBelt = '';
   private lastPrompt = '';
-  private toasts: { el: HTMLDivElement; until: number }[] = [];
+  /** until = NaN คือยังไม่เริ่มนับ (เกิดตอนหน้าจอซ้อนเปิด) เริ่มนับเมื่อกลับมาเห็นจอเกม */
+  private toasts: { el: HTMLDivElement; until: number; seconds: number }[] = [];
   private now = 0;
+  private lastView: HudView | null = null;
 
   constructor(parent: HTMLElement, private map: MapImage, private explore: ExploreMap) {
     this.root = el('div', 'hud', parent);
     this.toastBox = el('div', 'toasts', this.root);
+    this.statusBox = el('div', 'status-chips', this.toastBox);
 
     this.compass = el('div', 'compass', this.root);
     for (const [key, deg] of COMPASS) {
@@ -127,6 +134,8 @@ export class Hud {
       for (const x of this.toasts) x.el.remove();
       this.toasts = [];
       this.applyLang();
+      // วาดช่องแขน แถบล่าง ป้ายกดปุ่มใหม่ทันที (เดิมรอเฟรมถัดไปซึ่งไม่มาจนกว่าจะปิดหน้าตั้งค่า เห็นสองภาษาผ่านฉากเบลอ)
+      if (this.lastView) this.update(this.lastView, this.now);
     });
   }
 
@@ -137,19 +146,26 @@ export class Hud {
     this.bars.oxygen.label.textContent = t('oxygen');
     this.bars.battery.label.textContent = t('battery');
     this.beltHint.textContent = t('beltHint');
-    this.lastArms = this.lastBelt = this.lastPrompt = '';
+    this.lastArms = this.lastBelt = this.lastPrompt = this.lastStatus = '';
+  }
+
+  /** เวลาเกมล่าสุด (เรียกทุกเฟรมแม้หน้าจอซ้อนเปิด) · ข้อความสั้นที่เกิดตอนหน้าจอซ้อนเปิด เริ่มนับเวลาเมื่อกลับมาเห็นจอเกม (ข้อ 54 ในรายงานตรวจ) */
+  setTime(now: number): void {
+    this.now = now;
   }
 
   /** ข้อความสั้นมุมซ้ายบน หายเองตามเวลา */
   toast(html: string, kind: '' | 'warn' | 'danger' = '', seconds = 4): void {
     const e = el('div', 'toast ' + kind, this.toastBox);
     e.innerHTML = html;
-    this.toasts.push({ el: e, until: this.now + seconds });
+    this.toasts.push({ el: e, until: NaN, seconds });
     while (this.toasts.length > 4) this.toasts.shift()!.el.remove();
   }
 
   update(v: HudView, now: number): void {
     this.now = now;
+    this.lastView = v;
+    for (const x of this.toasts) if (Number.isNaN(x.until)) x.until = now + x.seconds;
     this.toasts = this.toasts.filter((x) => (x.until > now ? true : (x.el.remove(), false)));
 
     // เข็มทิศ: ทิศที่กล้องหันอยู่ตรงกลาง
@@ -172,7 +188,7 @@ export class Hud {
       b.row.classList.toggle('critical', val < 0.15);
     };
     setBar(this.bars.stamina, v.stamina);
-    this.bars.stamina.row.classList.toggle('critical', v.exhausted);
+    this.bars.stamina.row.classList.toggle('critical', v.exhausted || v.stamina < 0.15);
     setBar(this.bars.oxygen, v.oxygen);
     setBar(this.bars.battery, v.battery);
 
@@ -197,11 +213,16 @@ export class Hud {
         e.innerHTML = `<span class="n">${i + 1}</span>${s.empty ? '' : ICONS[s.icon] ?? ICONS.item}${s.count ? `<span class="count">${s.count}</span>` : ''}${s.empty ? '' : `<span class="label">${s.label}</span>`}`;
       });
     }
+    const statusKey = JSON.stringify(v.status ?? []);
+    if (statusKey !== this.lastStatus) {
+      this.lastStatus = statusKey;
+      this.statusBox.innerHTML = (v.status ?? []).map((s) => `<div class="toast ${s.kind}">${s.text}</div>`).join('');
+    }
     const promptKey = v.prompt ? v.prompt.key + v.prompt.text : '';
     if (promptKey !== this.lastPrompt) {
       this.lastPrompt = promptKey;
       this.promptEl.hidden = !v.prompt;
-      if (v.prompt) this.promptEl.innerHTML = `<kbd>${v.prompt.key}</kbd> ${v.prompt.text}`;
+      if (v.prompt) this.promptEl.innerHTML = v.prompt.key ? `<kbd>${v.prompt.key}</kbd> ${v.prompt.text}` : v.prompt.text;
     }
     this.reticleEl.hidden = !v.reticle;
 

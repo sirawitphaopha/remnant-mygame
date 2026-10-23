@@ -20,6 +20,8 @@ export interface MoveIntent {
 /** พื้นที่ชันเกินนี้เดินขึ้นไม่ได้ ต้องปีน (ค่าแกน y ของเวกเตอร์ตั้งฉากพื้น 0.72 ≈ 44 องศา) */
 const WALKABLE_NY = 0.72;
 /** ปีนถึงตรงที่ราบกว่านี้ ปีนขึ้นไปยืนได้ */
+/** ไถล: แรงต้าน (ต่อวินาที) กับความเร็วสูงสุด */
+const SLIDE = { drag: 0.35, maxSpeed: 12 } as const;
 const TOP_NY = 0.8;
 /** น้ำลึกเกินนี้ต้องว่าย */
 const SWIM_DEPTH = 1.3;
@@ -68,6 +70,10 @@ export class Player {
   /** กำลังปีนผนังตึก (ยอดผนังสูงเท่านี้) · null = ปีนหน้าผาธรรมชาติ */
   private wallTop: number | null = null;
   private wallDir: [number, number] = [0, 0];
+  /** ไถลที่เริ่มจากเดินลงเนินเอง (ไม่ได้ตกจากที่สูง) คิดเจ็บจากความเร็วตอนจบ ไม่ใช่ความสูงทั้งเนิน */
+  private slideFromWalk = false;
+  /** ปีนมานานแค่ไหน (เพิ่งแตะผนังยังไม่นับว่าถึงยอด) */
+  private climbTime = 0;
 
   constructor(private ground: SlopeGround, private colliders?: CircleColliders) {}
 
@@ -80,6 +86,15 @@ export class Player {
     this.state = 'ground';
     this.sinking = false;
     this.underwater = false;
+    // ล้างสถานะการเคลื่อนที่ทั้งหมด (เดิมตายระหว่างไถลแล้วเกิดใหม่ เฟรมแรกนับเป็นตก 40 ม. ตายซ้ำที่ยาน)
+    this.sliding = false;
+    this.slideFromWalk = false;
+    this.fallTop = this.y;
+    this.lastFall = 0;
+    this.wallTop = null;
+    this.activity = 'idle';
+    this.stepPhase = 0;
+    this.grade = 0;
   }
 
   /** ความลึกน้ำตรงนั้น (ติดลบ = บนบก) */
@@ -114,7 +129,11 @@ export class Player {
   private updateMove(dt: number, intent: MoveIntent, dirX: number, dirZ: number, len: number, canRun: boolean): void {
     const depth = this.depthAt(this.x, this.z);
     const inWater = depth > SWIM_DEPTH;
-    if (inWater && this.state !== 'air') this.state = 'swim';
+    if (inWater && this.state !== 'air') {
+      // ไถลหรือตกลงน้ำ: จบการไถล ไม่นับเป็นตก (เดิมไถลลงน้ำแล้วบังคับทิศไม่ได้ ขึ้นฝั่งโดนนับว่าตก)
+      if (this.state !== 'swim') { this.sliding = false; this.lastFall = 0; }
+      this.state = 'swim';
+    }
     if (!inWater && this.state === 'swim') {
       this.state = 'ground';
       this.sinking = false;
@@ -127,6 +146,8 @@ export class Player {
     } else {
       want = len > 0.01 ? (canRun ? MOVE.runSpeed : MOVE.walkSpeed) : 0;
       if (depth > 0.35) want *= 0.6; // ลุยน้ำตื้นช้าลง
+      // ยิ่งหนักยิ่งเดินช้า (DESIGN 7.5) แบกเกินครึ่งเริ่มช้า แบกเต็มช้าลง 30%
+      want *= 1 - 0.3 * Math.max(0, Math.min(1, (intent.loadRatio - 0.5) / 0.5));
     }
     this.running = canRun && len > 0.01 && this.state !== 'swim';
 
@@ -150,6 +171,9 @@ export class Player {
     const oldFloor = this.ground.heightAt(this.x, this.z);
     let nx = clamp(this.x + this.vx * dt, -WORLD.half + 3, WORLD.half - 3);
     let nz = clamp(this.z + this.vz * dt, -WORLD.half + 3, WORLD.half - 3);
+    // ชนขอบแมพ: ความเร็วแกนนั้นเป็นศูนย์ (เดิมไถลติดขอบแล้วความเร็วโตไม่หยุด)
+    if (nx !== this.x + this.vx * dt) this.vx = 0;
+    if (nz !== this.z + this.vz * dt) this.vz = 0;
 
     // ผนังถ้ำหรือในหิน: ไปต่อไม่ได้
     if (this.ground.blocked?.(nx, nz)) {
@@ -211,18 +235,27 @@ export class Player {
     // ยืนบนผนังชันไม่ได้ (หลุดจากการปีน หรือตกลงบนเนินชัน) = ไถลลงตามเนินจนถึงที่ราบ
     const nHere = this.ground.normalAt(nx, nz);
     if (this.state === 'ground' && nHere[1] < WALKABLE_NY) {
-      if (!this.sliding) { this.sliding = true; this.fallTop = Math.max(this.y, floor); }
+      if (!this.sliding) { this.sliding = true; this.slideFromWalk = true; this.fallTop = Math.max(this.y, floor); }
       const hl = Math.hypot(nHere[0], nHere[2]) || 1;
       const g = MOVE.gravity * (1 - nHere[1]) * 1.6;
       this.vx += (nHere[0] / hl) * g * dt;
       this.vz += (nHere[2] / hl) * g * dt;
+      // แรงต้านพื้นกับความเร็วสูงสุดตอนไถล
+      const drag = Math.max(0, 1 - SLIDE.drag * dt);
+      this.vx *= drag;
+      this.vz *= drag;
+      const sv = Math.hypot(this.vx, this.vz);
+      if (sv > SLIDE.maxSpeed) { this.vx *= SLIDE.maxSpeed / sv; this.vz *= SLIDE.maxSpeed / sv; }
       this.y = floor;
       this.activity = 'fall';
       return;
     }
     if (this.sliding && this.state === 'ground') {
       this.sliding = false;
-      this.lastFall = this.fallTop - floor;
+      // ไถลเพราะเดินลงเนินเอง: เจ็บเท่ากับตกจากความสูงที่ให้ความเร็วเท่านี้ (v² / 2g) · ไถลต่อจากการตก: นับความสูงรวม
+      const v = Math.hypot(this.vx, this.vz);
+      this.lastFall = this.slideFromWalk ? (v * v) / (2 * MOVE.gravity) : this.fallTop - floor;
+      this.slideFromWalk = false;
       this.vx *= 0.3;
       this.vz *= 0.3;
     }
@@ -246,7 +279,7 @@ export class Player {
         this.y = floor;
         this.vy = 0;
         // ตกลงบนเนินชัน: ยังไม่จบ ไถลต่อ นับความสูงรวม
-        if (this.ground.normalAt(this.x, this.z)[1] < WALKABLE_NY) this.sliding = true;
+        if (this.ground.normalAt(this.x, this.z)[1] < WALKABLE_NY) { this.sliding = true; this.slideFromWalk = false; }
         else this.lastFall = this.fallTop - floor;
         this.state = this.depthAt(this.x, this.z) > SWIM_DEPTH ? 'swim' : 'ground';
         if (this.state === 'swim') this.lastFall = 0; // ตกลงน้ำไม่เจ็บ
@@ -265,6 +298,7 @@ export class Player {
     this.z = nz;
     this.y = this.ground.heightAt(nx, nz);
     this.climbStartY = this.y;
+    this.climbTime = 0;
     this.wall = this.ground.normalAt(nx, nz);
     this.vx = this.vz = this.vy = 0;
   }
@@ -291,6 +325,14 @@ export class Player {
     let nz = this.z + (upZ * fwd + sideZ * side) * sp * steep * dt;
     nx = clamp(nx, -WORLD.half + 3, WORLD.half - 3);
     nz = clamp(nz, -WORLD.half + 3, WORLD.half - 3);
+    // ปีนแล้วชนหินกับต้นไม้เหมือนตอนเดิน (เดิมไต่ทะลุเนื้อหิน)
+    if (this.colliders) {
+      const feet = this.y;
+      const res = this.colliders.push(nx, nz, MOVE.radius, (c) => feet - this.ground.heightAt(c.x, c.z));
+      nx = res.x;
+      nz = res.z;
+    }
+    this.climbTime += dt;
     const oldY = this.y;
     this.x = nx;
     this.z = nz;
@@ -309,7 +351,8 @@ export class Player {
     if (!intent.climbGear || this.stamina.exhausted) { fall(0.8); return; }
     if (intent.jump) { fall(2.5); return; }
     // ถึงยอด: พื้นตรงนั้นราบพอยืนได้ (ต้องปีนขึ้นมาแล้วจริง ไม่ใช่เพิ่งแตะผนัง)
-    if (n[1] >= TOP_NY && this.y > this.climbStartY + 0.6) {
+    // ปีนเลียบเข้าที่ราบ (ปากถ้ำ ข้างตึก) ก็ยืนได้ ไม่ค้างในท่าปีน
+    if (n[1] >= TOP_NY && (this.y > this.climbStartY + 0.6 || this.climbTime > 0.4)) {
       this.state = 'ground';
       return;
     }

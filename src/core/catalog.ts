@@ -2,7 +2,7 @@
 // ชั้น 1 เอเลี่ยนเดา (สแกนครั้งแรก) · ชั้น 2 ความจริง (สแกนชนิดเดียวกันครบ 3 ชิ้น) · ชั้น 3 บันทึกส่วนตัว (เฉพาะบางชิ้นที่พิเศษ)
 // 🔴 ชั้น 2 เขียนเป็นข้อเท็จจริงทั่วไป ไม่ใส่ตัวเลขที่ไม่มีแหล่งอ้างอิง
 
-export type Category = 'human' | 'animal' | 'plant' | 'self';
+export type Category = 'human' | 'animal' | 'plant' | 'nature' | 'self';
 export interface Txt { th: string; en: string }
 
 export interface Kind {
@@ -95,7 +95,7 @@ export const KINDS: Kind[] = [
   k('fox', 'animal', false, undefined, { th: 'จิ้งจอก', en: 'Fox' }, { th: 'หางเปลวไฟ', en: 'Flame Tail' },
     { th: 'สัตว์สีส้มหางฟู มองฉันนานกว่าสัตว์ตัวอื่น', en: 'An orange animal with a bushy tail. It watches me longer than the others do.' },
     { th: 'จิ้งจอก — สัตว์ฉลาด ล่าสัตว์ตัวเล็กกิน', en: 'Fox — a clever animal that hunts small prey.' }),
-  k('crow', 'animal', false, undefined, { th: 'นกกา', en: 'Crow' }, { th: 'เงาบิน', en: 'Flying Shadow' },
+  k('crow', 'animal', false, undefined, { th: 'อีกา', en: 'Crow' }, { th: 'เงาบิน', en: 'Flying Shadow' },
     { th: 'นกสีดำร้องเสียงแหบ บินวนเหนือซากเมือง', en: 'A black bird with a hoarse voice, circling above the ruins.' },
     { th: 'อีกา — นกฉลาด กินได้แทบทุกอย่าง', en: 'Crow — a clever bird that eats almost anything.' }),
   k('eagle', 'animal', false, undefined, { th: 'นกอินทรี', en: 'Eagle' }, { th: 'ปีกกว้าง', en: 'Wide Wings' },
@@ -135,7 +135,7 @@ export const KINDS: Kind[] = [
   k('dead', 'plant', false, undefined, { th: 'ต้นไม้ตาย', en: 'Dead Tree' }, { th: 'มือแห้ง', en: 'Dry Hand' },
     { th: 'ต้นไม้ที่ไม่มีใบ กิ่งชี้ขึ้นฟ้าเหมือนมือที่กำลังขอบางอย่าง', en: 'A leafless tree with branches raised like hands asking for something.' },
     { th: 'ต้นไม้ที่ตายแล้ว — ยังยืนอยู่ เป็นบ้านของแมลงและนก', en: 'Dead tree — still standing, a home for insects and birds.' }),
-  k('rock', 'plant', false, undefined, { th: 'ก้อนหิน', en: 'Rock' }, { th: 'สัตว์นอนนิ่ง', en: 'Sleeping Beast' },
+  k('rock', 'nature', false, undefined, { th: 'ก้อนหิน', en: 'Rock' }, { th: 'สัตว์นอนนิ่ง', en: 'Sleeping Beast' },
     { th: 'สิ่งที่ไม่หายใจ ไม่ขยับ ฉันสแกนมันสามรอบเพื่อให้แน่ใจ', en: 'It does not breathe or move. I scanned it three times to be sure.' },
     { th: 'ก้อนหิน — แร่ธาตุ ไม่ใช่สิ่งมีชีวิต มีมอสขึ้นด้านบน', en: 'Rock — minerals, not alive, with moss growing on top.' }),
   k('fern', 'plant', false, undefined, { th: 'เฟิร์น', en: 'Fern' }, { th: 'ขนนกพื้นดิน', en: 'Ground Feather' },

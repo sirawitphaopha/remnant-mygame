@@ -35,8 +35,19 @@ export class NatureAudio {
   private beds: Record<'wind' | 'leaves' | 'water' | 'cave', { gain: GainNode; filter: BiquadFilterNode }> = {} as never;
   private timers = { bird: 2, crow: 6, cricket: 0, frog: 3, owl: 8, drip: 1 };
   /** ระดับเสียงที่ตั้ง (หน้าตั้งค่า) */
-  natureVolume = 0.8;
-  gearVolume = 0.65;
+  private natureVol = 0.8;
+  private gearVol = 0.65;
+  /** ระดับเสียงจากหน้าตั้งค่า มีผลทันทีแม้เกมหยุดอยู่ (เดิมรอ update ซึ่งไม่ถูกเรียกตอนหน้าตั้งค่าเปิด) */
+  get natureVolume(): number { return this.natureVol; }
+  set natureVolume(v: number) {
+    this.natureVol = v;
+    if (this.ctx) this.natureBus.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+  }
+  get gearVolume(): number { return this.gearVol; }
+  set gearVolume(v: number) {
+    this.gearVol = v;
+    if (this.ctx) this.gearBus.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+  }
   /** ค่าล่าสุดของแต่ละเสียง (ไว้ทดสอบ) */
   readonly levels: Record<string, number> = {};
   readonly counts: Record<string, number> = { bird: 0, crow: 0, cricket: 0, frog: 0, owl: 0, drip: 0, step: 0 };
@@ -67,6 +78,9 @@ export class NatureAudio {
     this.reverbGain = ctx.createGain();
     this.reverbGain.gain.value = 0;
     this.reverb.connect(this.reverbGain).connect(this.master);
+    // เสียงก้องรับจากหลังตัวปรับเสียงของแต่ละหมวด ลดหมวดไหนเป็น 0 เสียงก้องของหมวดนั้นก็เงียบด้วย
+    this.natureBus.connect(this.reverb);
+    this.gearBus.connect(this.reverb);
     // เสียงรบกวนสีชมพูไว้ทำลม น้ำ ใบไม้
     const len = ctx.sampleRate * 3;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -110,7 +124,6 @@ export class NatureAudio {
     const gain = ctx.createGain();
     gain.gain.value = 0;
     src.connect(filter).connect(gain).connect(this.natureBus);
-    gain.connect(this.reverb);
     src.start();
     return { gain, filter };
   }
@@ -121,6 +134,25 @@ export class NatureAudio {
   }
 
   /** เรียกทุกเฟรม · ปรับเสียงพื้นหลังและสุ่มเสียงสัตว์ตามที่อยู่กับเวลา */
+  /** ออกไปหน้าแรก กำลังตาย หรือหน้าจอซ้อนเปิดนาน: เสียงพื้นหลังเหลือลมเบา ๆ ไม่ค้างเสียงถ้ำหรือเสียงใต้น้ำ */
+  idle(): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.beds.wind.gain.gain.setTargetAtTime(0.05, now, 0.6);
+    this.beds.leaves.gain.gain.setTargetAtTime(0.02, now, 0.6);
+    this.beds.water.gain.gain.setTargetAtTime(0, now, 0.6);
+    this.beds.cave.gain.gain.setTargetAtTime(0, now, 0.6);
+    this.reverbGain.gain.setTargetAtTime(0.05, now, 0.6);
+    this.muffle.frequency.setTargetAtTime(20000, now, 0.2);
+  }
+
+  /** แท็บถูกซ่อน: พักเสียงทั้งหมด · กลับมาแล้วเล่นต่อ */
+  pause(paused: boolean): void {
+    if (!this.ctx) return;
+    if (paused) void this.ctx.suspend();
+    else void this.ctx.resume();
+  }
+
   update(dt: number, e: AudioEnv): void {
     if (!this.ctx) return;
     const ctx = this.ctx;
@@ -165,7 +197,7 @@ export class NatureAudio {
     const pan = ctx.createStereoPanner();
     pan.pan.value = rand(-0.8, 0.8);
     o.connect(g).connect(pan).connect(bus);
-    if (toReverb) pan.connect(this.reverb);
+    void toReverb;
     o.start(t);
     o.stop(t + dur + 0.05);
   }
@@ -182,7 +214,6 @@ export class NatureAudio {
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(f).connect(g).connect(bus);
-    g.connect(this.reverb);
     src.start(t, Math.random() * 2, dur + 0.05);
   }
 

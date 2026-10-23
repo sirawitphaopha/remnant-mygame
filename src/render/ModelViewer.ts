@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { disposeObject } from './dispose';
 import { busModel, carModel, droppedBagModel, lampModel, mailboxModel, signModel, smallItemModel } from './models/props';
 import { plantGeometry, rockGeometry, treeGeometry } from './models/plants';
 import { HeroModel } from './models/hero';
@@ -74,7 +75,8 @@ export class ModelViewer {
     }
     if (kind !== this.current) {
       this.current = kind;
-      this.holder.clear();
+      // คืนหน่วยความจำชิ้นที่ดูก่อนหน้า (เดิมสลับดูทีไรของเก่าค้างทุกชิ้น)
+      for (const c of [...this.holder.children]) disposeObject(c);
       const obj = kindModel(kind);
       const box = new THREE.Box3().setFromObject(obj);
       const size = box.getSize(new THREE.Vector3());

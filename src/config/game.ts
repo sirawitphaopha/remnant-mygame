@@ -21,4 +21,6 @@ export const MOVE = {
   accel: 8,
   radius: 0.35,
   height: 1.8,
+  /** ความสูงหัว (โหลแก้ว) จากเท้า ใช้เช็กก๊าซกับจมน้ำ */
+  headHeight: 1.7,
 } as const;

@@ -10,11 +10,17 @@ export class Input {
   wheel = 0;
   /** เวลาล่าสุดที่เมาส์ขยับ (วินาทีของนาฬิกาเกม) ใช้ให้กล้องหมุนกลับข้างหลังเอง */
   lastMouseMove = 0;
+  /** กำลังเล่นอยู่ (ไม่มีหน้าเมนู) Tab ใช้เปิดกระเป๋า · นอกนั้นปล่อยให้ Tab เลื่อนปุ่มตามปกติของเบราว์เซอร์ */
+  captureTab = false;
+  /** ขอล็อกเมาส์ไม่สำเร็จ (เบราว์เซอร์ไม่ยอม) ให้หน้าจอขึ้นป้ายบอกให้คลิก */
+  lockFailed = false;
   private now = 0;
+  private wheelAcc = 0;
+  private wheelAt = -1;
 
   constructor(private target: HTMLElement) {
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Tab') e.preventDefault();
+      if (e.code === 'Tab' && this.captureTab) e.preventDefault();
       if (!this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
     });
@@ -33,7 +39,16 @@ export class Input {
       this.mouseDY += e.movementY;
       if (Math.abs(e.movementX) + Math.abs(e.movementY) > 1) this.lastMouseMove = this.now;
     });
-    window.addEventListener('wheel', (e) => { this.wheel += Math.sign(e.deltaY); }, { passive: true });
+    // ทัชแพดส่งเหตุการณ์ล้อถี่มาก สะสมจนถึงหนึ่งขั้นแล้วพักสั้น ๆ (ปัดทีเดียวไม่ข้ามหลายช่อง)
+    window.addEventListener('wheel', (e) => {
+      this.wheelAcc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+      if (Math.abs(this.wheelAcc) < 60 || this.now - this.wheelAt < 0.12) return;
+      this.wheel += Math.sign(this.wheelAcc);
+      this.wheelAcc = 0;
+      this.wheelAt = this.now;
+    }, { passive: true });
+    document.addEventListener('pointerlockerror', () => { this.lockFailed = true; });
+    document.addEventListener('pointerlockchange', () => { if (this.locked) this.lockFailed = false; });
   }
 
   get locked(): boolean { return document.pointerLockElement === this.target; }

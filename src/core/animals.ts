@@ -42,7 +42,7 @@ export const SPECIES: Species[] = [
 export const SPECIES_BY_ID = new Map(SPECIES.map((s) => [s.id, s]));
 
 /** โดนหมึก: เหนียวจนช้าลงกี่วินาที และช้าลงเหลือเท่าไร */
-export const INK = { stickySeconds: 8, slowTo: 0.35, enragedBoost: 1.25, fleeSeconds: 10 } as const;
+export const INK = { stickySeconds: 8, slowTo: 0.35, enragedBoost: 1.25, fleeSeconds: 10, enragedSeconds: 30 } as const;
 
 /** ไล่แล้วไม่เกินระยะนี้จากที่อยู่ จะเลิกไล่กลับไป */
 export const LEASH = 45;
@@ -57,18 +57,20 @@ export interface AnimalMind {
   /** ตกใจวิ่งหนีเหลือกี่วินาที */
   scared: number;
   enraged: boolean;
+  /** ดุเพราะหมึกเหลือกี่วินาที (หมดแล้วกลับมาเคารพระยะกลับบ้าน) */
+  rage: number;
   cooldown: number;
 }
 
 export function newMind(): AnimalMind {
-  return { mode: 'wander', sticky: 0, scared: 0, enraged: false, cooldown: 0 };
+  return { mode: 'wander', sticky: 0, scared: 0, enraged: false, rage: 0, cooldown: 0 };
 }
 
 /** โดนหมึก */
 export function inkHit(m: AnimalMind, s: Species): void {
   m.sticky = INK.stickySeconds;
   if (s.ink === 'flee') { m.scared = INK.fleeSeconds; m.mode = 'flee'; }
-  if (s.ink === 'enraged') m.enraged = true;
+  if (s.ink === 'enraged') { m.enraged = true; m.rage = INK.enragedSeconds; }
 }
 
 /** ความเร็วตอนนี้ (หมึกเหนียวทำให้ช้า ดุขึ้นเร็วขึ้น) */
@@ -87,6 +89,10 @@ export function decide(m: AnimalMind, s: Species, dt: number, dist: number, from
   m.sticky = Math.max(0, m.sticky - dt);
   m.scared = Math.max(0, m.scared - dt);
   m.cooldown = Math.max(0, m.cooldown - dt);
+  if (m.enraged) {
+    m.rage = Math.max(0, m.rage - dt);
+    if (m.rage <= 0) m.enraged = false;
+  }
   const aggro = s.aggro * (m.enraged ? 1.5 : 1);
   if (m.scared > 0) return (m.mode = 'flee');
   if (aggro > 0) {

@@ -1,6 +1,7 @@
 # CLAUDE.md — คู่มือโค้ด ร่องรอย (Remnant)
 
 อ่านก่อนแก้ทุกครั้ง · ข้อกำหนดเกมทั้งหมดอยู่ใน `docs/DESIGN.md` · แผนงานอยู่ใน `docs/PLAN.md` · สถานะแต่ละช่วงอยู่ใน `docs/ROADMAP.md` · สรุปรวม เรื่องรอเคาะ บั๊กค้าง `docs/phases/SUMMARY.md` · บันทึก session ล่าสุด `docs/SESSION-2026-10-23.md`
+**รอบสอง (ขยายโลก 3 × 3 กม.)** แผน `docs/PLAN-R2.md` · วิธีทำ `docs/phases-r2/TECH.md` · รายงานแต่ละช่วง `docs/phases-r2/phase-XX.md` · รายงานตรวจ 135 ข้อ `docs/BUGHUNT-2026-10-23.md` · รูปอ้างอิงกับข้อเท็จจริงที่ใช้ในข้อความสแกน `docs/REFERENCES-R2.md`
 
 ## ภาพรวม
 - เกมสามมิติบนเว็บ เล่นบนคอมเท่านั้น · TypeScript strict + three.js + Vite · ไม่มีหลังบ้าน

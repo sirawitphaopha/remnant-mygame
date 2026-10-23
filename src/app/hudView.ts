@@ -14,7 +14,7 @@ function gearSub(g: GearSlot): string {
     case 'flashlight': return `${g.on ? t('on') : t('off')} · ${t('charge')} ${Math.round((g.charge ?? 0) * 100)}%`;
     case 'inkGun': return `${t('ink')} ${g.amount ?? 0}/${GEAR.inkGun.max}`;
     case 'glueGun': return `${t('glue')} ${g.amount ?? 0}/${GEAR.glueGun.max}`;
-    case 'oxygenTank': return `${g.amount ?? 0} ${t('tanks')}`;
+    case 'oxygenTank': return `${g.amount ?? 0} ${t(g.amount === 1 ? 'tank' : 'tanks')}`;
     default: return '';
   }
 }
@@ -39,7 +39,7 @@ export function armViews(l: Loadout, itemName: ItemNamer): ArmView[] {
   return ARM_KEYS.map((key, i) => {
     const s = held(l, i);
     if (!s) return { key, name: '', sub: '', main: i === 0, active: false, empty: true };
-    if (s.kind === 'item') return { key, name: itemName(s.itemId), sub: `${s.kg.toFixed(1)} kg`, main: i === 0, active: false, empty: false };
+    if (s.kind === 'item') return { key, name: itemName(s.itemId), sub: `${s.kg.toFixed(1)} ${t('kg')}`, main: i === 0, active: false, empty: false };
     return { key, name: gearName(s), sub: gearSub(s), main: i === 0, active: s.id === 'flashlight' && !!s.on, empty: false };
   });
 }

@@ -29,6 +29,15 @@ export class WorldGround implements SlopeGround {
     return Math.max(t, s);
   }
 
+  /** พื้นใต้จุดนี้ ณ ความสูง y (วางซาก กระเป๋า หมึก ให้อยู่ชั้นเดียวกับที่อยู่จริง ทั้งในถ้ำและบนหลังคา) */
+  groundAt(x: number, z: number, y: number): number {
+    const keep = this.contextY;
+    this.contextY = y + 0.4;
+    const h = this.heightAt(x, z);
+    this.contextY = keep;
+    return h;
+  }
+
   waterAt(x: number, z: number): number {
     return this.terrain.heightAt(x, z) < WORLD.waterLevel ? WORLD.waterLevel : -Infinity;
   }

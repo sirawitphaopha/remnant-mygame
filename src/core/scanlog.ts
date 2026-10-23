@@ -27,6 +27,18 @@ export interface ScanResult {
 
 export class ScanLog {
   readonly records = new Map<string, KindRecord>();
+  /** จำนวนชิ้นที่มีอยู่จริงในโลกต่อชนิด · ชนิดที่มีไม่ถึง 3 ชิ้น ปลดความจริงเมื่อสแกนครบทุกชิ้นที่มี */
+  private available = new Map<string, number>();
+
+  setAvailable(counts: Record<string, number>): void {
+    this.available = new Map(Object.entries(counts));
+  }
+
+  /** ต้องสแกนกี่ชิ้นถึงปลดความจริงของชนิดนี้ */
+  needFor(kindId: string): number {
+    const have = this.available.get(kindId);
+    return have === undefined ? TRUTH_AFTER : Math.max(1, Math.min(TRUTH_AFTER, have));
+  }
 
   private rec(kindId: string): KindRecord {
     let r = this.records.get(kindId);
@@ -44,9 +56,10 @@ export class ScanLog {
   scan(kindId: string, key: string, special = false): ScanResult {
     const firstTime = !this.records.has(kindId) || this.records.get(kindId)!.seen.length === 0;
     const r = this.rec(kindId);
-    const hadTruth = r.seen.length >= TRUTH_AFTER;
+    const need = this.needFor(kindId);
+    const hadTruth = r.seen.length >= need;
     if (!r.seen.includes(key)) r.seen.push(key);
-    const newTruth = !hadTruth && r.seen.length >= TRUTH_AFTER;
+    const newTruth = !hadTruth && r.seen.length >= need;
     let newLog = false;
     if (special && !r.log && kind(kindId)?.log) {
       r.log = true;
@@ -61,7 +74,7 @@ export class ScanLog {
   }
 
   truth(kindId: string): boolean {
-    return (this.records.get(kindId)?.seen.length ?? 0) >= TRUTH_AFTER;
+    return (this.records.get(kindId)?.seen.length ?? 0) >= this.needFor(kindId);
   }
 
   log(kindId: string): boolean {
@@ -79,8 +92,15 @@ export class ScanLog {
     return this.truth(kindId) ? 2 : 1;
   }
 
-  deposit(kindId: string): void {
-    this.rec(kindId).deposited++;
+  /** ฝากของชิ้นเล็กเข้ายาน · ชิ้นพิเศษปลดบันทึกส่วนตัวให้ด้วย (เก็บก่อนสแกนก็ไม่พลาดชั้น 3) คืน true ถ้าเพิ่งได้ชั้น 3 */
+  deposit(kindId: string, special = false): boolean {
+    const r = this.rec(kindId);
+    r.deposited++;
+    if (special && !r.log && kind(kindId)?.log) {
+      r.log = true;
+      return true;
+    }
+    return false;
   }
 
   serialize(): string {
@@ -93,7 +113,8 @@ export class ScanLog {
       const arr = JSON.parse(s) as [string, KindRecord][];
       for (const [id, r] of arr) {
         if (typeof id !== 'string' || !r || !Array.isArray(r.seen)) continue;
-        this.records.set(id, { seen: r.seen.filter((x) => typeof x === 'string'), log: r.log === true, deposited: Number(r.deposited) || 0 });
+        const seen = [...new Set(r.seen.filter((x) => typeof x === 'string'))];
+        this.records.set(id, { seen, log: r.log === true, deposited: Math.max(0, Math.floor(Number(r.deposited) || 0)) });
       }
     } catch {
       // ข้อมูลเสีย เริ่มใหม่

@@ -15,6 +15,8 @@ export const STAMINA = {
   recover: { idle: 14, walk: 7 },
   /** หยุดใช้แรงแล้วรอกี่วินาทีก่อนเริ่มฟื้น */
   recoverDelay: 0.8,
+  /** แบกเกิน 70% ของที่แบกไหว เดินราบก็เหนื่อย (ต่อวินาที ที่แบกเต็ม) */
+  heavyWalk: 4,
   /** แรงหมดแล้วต้องฟื้นถึงเท่านี้ก่อนวิ่งได้อีก */
   exhaustedUntil: 25,
 } as const;
@@ -39,6 +41,7 @@ export function stepStamina(s: StaminaState, dt: number, act: Activity, grade: n
   const load = 1 + Math.max(0, loadRatio) * 0.9;
   let cost = STAMINA.cost[act];
   if ((act === 'walk' || act === 'run') && grade > 0) cost += STAMINA.uphill * grade * (act === 'run' ? 1.6 : 1);
+  if (act === 'walk' && loadRatio > 0.7) cost += STAMINA.heavyWalk * Math.min(1, (loadRatio - 0.7) / 0.3);
   cost *= load;
   if (cost > 0.01) {
     s.value -= cost * dt;

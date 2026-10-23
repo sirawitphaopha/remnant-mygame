@@ -1,5 +1,5 @@
 import type { DeathCause } from '../core/body';
-import { onLangChange, t, type StrKey } from './strings';
+import { onLangChange, t, tf, type StrKey } from './strings';
 
 // ภาพบนจอตามสภาพร่างกาย: ขอบจอแดง โหลร้าว น้ำแข็งเกาะกระจก · หน้าตอนตาย
 
@@ -33,6 +33,11 @@ export class BodyFx {
       this.paths.push(p);
     }
     parent.prepend(this.frost, this.hurt, this.crack);
+  }
+
+  /** ซ่อนขอบแดง น้ำแข็ง รอยร้าว (ออกไปหน้าแรก) · กลับเข้าเกมแล้ว update เฟรมแรกวาดคืนเอง */
+  hide(): void {
+    this.update(0, 0, 1);
   }
 
   update(cracks: number, hurt: number, warmth: number): void {
@@ -89,7 +94,7 @@ export class DeathScreen {
         <div class="cause">${t(CAUSE[c])} · ${t('bodyN')} ${this.body} ${t('ended')}</div>
         <div class="quote">${t(QUOTE[c])}</div>
         <div class="clone">${t('cloning')}<div class="meter"><i style="width:${Math.round(this.progress * 100)}%"></i></div><span class="pct num">${Math.round(this.progress * 100)}%</span></div>
-        <div class="lost"><span>${t('allDropped')}</span><span>${t('gearN')} ${this.gear} ${t('pieces')}</span><span>${t('itemsN')} ${this.items} ${t('pieces')}</span><span>${t('deathMarked')}</span></div>
+        <div class="lost"><span>${t('allDropped')}</span><span>${tf('gearCount', { n: this.gear })}</span><span>${tf('itemsCount', { n: this.items })}</span><span>${t('deathMarked')}</span></div>
       </div>`;
   }
 }

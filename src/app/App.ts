@@ -16,23 +16,24 @@ import { WIND } from '../render/wind';
 import { Input } from './Input';
 import { ExploreMap } from '../core/explore';
 import { findGear, holding, equipToArm, starterPack, type Loadout } from '../core/gear';
-import { SHIP } from '../world/layout';
+import { SHIP, SHIP_ENTER_RADIUS, SHIP_WARM_RADIUS } from '../world/layout';
+import { MOVE, WORLD } from '../config/game';
 import { Hud, type MapMarker } from '../ui/Hud';
 import { BigMap } from '../ui/BigMap';
 import { MapImage } from '../ui/MapImage';
 import { armViews, beltViews } from './hudView';
 import { Tools, type ScanTarget } from './Tools';
-import { setLang, t } from '../ui/strings';
+import { setLang, t, tf } from '../ui/strings';
 import { kind as kindOf } from '../core/catalog';
 import { ScanLog } from '../core/scanlog';
 import { buildLoadout, starterChoice, type ShipChoice } from '../core/gear';
-import { depositAll, dropBag, loadRatio as loadRatioOf, nestBag, pickUp, takeBag, takeFromRemains, unnestBag, type NestedBag } from '../core/inventory';
+import { depositAll, dropBag, isBag, loadRatio as loadRatioOf, nestBag, pickUp, takeBag, takeFromRemains, unnestBag, type BagContents, type NestedBag } from '../core/inventory';
 import { placeProps } from '../world/props';
 import { Props } from '../render/Props';
 import { ModelViewer } from '../render/ModelViewer';
 import { droppedBagModel } from '../render/models/props';
 import { InventoryScreen, ScanCard, ShipScreen, shownName } from '../ui/Screens';
-import { Body, type DeathCause } from '../core/body';
+import { BODY, Body, type DeathCause } from '../core/body';
 import { emptyLoadout, type Slot } from '../core/gear';
 import { BodyFx, DeathScreen } from '../ui/BodyFx';
 import { remainsModel } from '../render/models/hero';
@@ -42,14 +43,18 @@ import { buildTown, type TownLayout } from '../world/town';
 import { Town } from '../render/Town';
 import { Caves } from '../render/Caves';
 import { WorldGround } from './WorldGround';
+import { disposeObject } from '../render/dispose';
 import { Animals } from './Animals';
 import { NatureAudio, type Surface } from '../audio/NatureAudio';
-import { clearSave, readSave, readSettings, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
+import { clearSave, readSave, readSettings, storedSavedAt, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
 import { SettingsScreen, TitleScreen } from '../ui/Menus';
 import { forestDensity } from '../world/scatter';
 import { LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from '../world/layout';
 
 /** ผูกทุกส่วนของเกมเข้าด้วยกัน และวนลูปทุกเฟรม */
+/** ป้ายปุ่มของแต่ละแขน (แขนบนขวา บนซ้าย ล่างขวา ล่างซ้าย) */
+const ARM_KEY_LABEL: (() => string)[] = [() => t('keyLeft'), () => t('keyRight'), () => 'Q', () => 'R'];
+
 export class App {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -104,6 +109,14 @@ export class App {
   started = false;
   /** โลกในหน่วยความจำเป็นเกมที่กำลังเล่นอยู่แล้ว (โหลดจากบันทึกหรือกดเล่นไปแล้ว) ห้ามโหลดทับซ้ำ */
   private live = false;
+  /** หน้ายานที่เปิดอยู่มาจากการเกิดใหม่ (Esc = ออกเดินทาง) */
+  private respawnShip = false;
+  /** เวลาบันทึกล่าสุดที่แท็บนี้รู้ (ของตัวเองหรือที่โหลดมา) ไว้จับว่าแท็บอื่นเขียนทับ */
+  private lastSavedAt = 0;
+  /** มีเกมเปิดอยู่อีกแท็บ แท็บนี้หยุดบันทึก */
+  private saveBlocked = false;
+  /** เตือนว่าบันทึกไม่ได้ไปแล้ว (เตือนครั้งเดียว) */
+  private saveWarned = false;
   private saveTimer = 0;
   private titleOrbit = 0;
   private lastStep = 0;
@@ -226,10 +239,14 @@ export class App {
       equip: (slot, arm) => equipToArm(this.loadout, slot, arm),
       dropBag: (slot) => this.dropBagAt(slot),
       nestBag: (slot) => {
-        const into = this.loadout.belt.findIndex((x, i) => i !== slot && x?.kind === 'gear' && x.id === 'bag');
-        if (into >= 0) nestBag(this.loadout, slot, into);
+        // ลองทุกใบ ใบแรกที่รับน้ำหนักไหวชนะ (เดิมเลือกใบแรกที่เจอเสมอ ใส่ไม่ได้ก็เงียบ)
+        for (let into = 0; into < this.loadout.belt.length; into++) {
+          const x = this.loadout.belt[into];
+          if (into !== slot && x?.kind === 'gear' && x.id === 'bag' && nestBag(this.loadout, slot, into)) return;
+        }
+        this.hud.toast(t('nestFailed'), 'warn');
       },
-      unnestBag: (slot, i) => unnestBag(this.loadout, slot, i),
+      unnestBag: (slot, i) => { if (!unnestBag(this.loadout, slot, i)) this.hud.toast(t('unnestFailed'), 'warn'); },
       close: () => this.closeScreens(),
     });
     this.shipScreen = new ShipScreen(uiRoot, { depart: (c) => this.depart(c) });
@@ -246,7 +263,7 @@ export class App {
     this.title = new TitleScreen(uiRoot, {
       continueGame: () => this.continueGame(),
       newGame: () => this.newGame(),
-      openCollection: () => this.inventory.show('collection', { loadout: this.loadout, log: this.scanLog, body: this.bodyView() }),
+      openCollection: () => this.inventory.show('collection', { loadout: this.loadout, log: this.scanLog, body: this.bodyView(), viewOnly: true }),
       openSettings: () => this.settingsScreen.show(this.settings, true),
       quit: () => this.save(),
     });
@@ -254,14 +271,16 @@ export class App {
       scene: this.scene,
       hero: this.hero,
       get loadout() { return app.loadout; },
-      heightAt: (x, z) => this.terrain.heightAt(x, z),
+      groundAt: (x, z, y) => this.worldGround.groundAt(x, z, y),
       toast: (text, kind = '') => this.hud.toast(text, kind),
       findScanTarget: (o, d) => this.findScanTarget(o, d),
       onScanned: (target) => this.onScanned(target),
       sealCrack: () => this.body.seal(),
-      refillOxygen: () => this.body.refill(),
+      // บนบกที่กำลังเติมเองอยู่ ไม่ต้องเปิดถัง (กันเสียถังทั้งใบเพื่อได้ไม่กี่เปอร์เซ็นต์)
+      refillOxygen: () => (this.body.draining || this.body.oxygen < 0.9) && this.body.refill(),
       onInk: (x, y, z) => { this.animals.ink(x, y, z); },
-      sunlit: () => this.skyState.sunHeight > 0.05,
+      // แดดถึงตัวจริง: กลางวัน ไม่อยู่ในถ้ำ ไม่อยู่ใต้หลังคา
+      sunlit: () => this.skyState.sunHeight > 0.05 && this.caveDepth < 0.05 && !this.shelterAt(this.player.x, this.player.y, this.player.z),
       sound: (n) => (n === 'ink' ? this.audio.inkShot() : n === 'glue' ? this.audio.glue() : this.audio.click()),
     });
 
@@ -269,6 +288,15 @@ export class App {
     const wake = () => this.audio.start();
     window.addEventListener('pointerdown', wake);
     window.addEventListener('keydown', wake);
+
+    // จำนวนชิ้นที่มีอยู่จริงต่อชนิด ชนิดที่มีไม่ถึง 3 ชิ้น (รถเมล์ สะพาน ภาพวาด) ปลดความจริงได้เมื่อสแกนครบทุกชิ้นที่มี
+    const counts: Record<string, number> = {};
+    const add = (k: string) => { counts[k] = (counts[k] ?? 0) + 1; };
+    for (const pp of this.props.all) add(pp.prop.kind);
+    for (let i = 0; i < this.town.buildings.length; i++) add('building');
+    for (const sc of this.cavesView.scannables) add(sc.kind);
+    if (this.town.bridge.length) add('bridge');
+    this.scanLog.setAvailable(counts);
 
     this.setQuality(DEFAULT_QUALITY);
     this.applySettings(this.settings);
@@ -278,7 +306,10 @@ export class App {
     });
     const autosave = () => { if (this.started && !this.dying) this.save(); };
     window.addEventListener('beforeunload', autosave);
-    document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) autosave();
+      this.audio.pause(document.hidden);
+    });
     // มาจากปุ่มเริ่มสำรวจใหม่ (ล้างบันทึกแล้วเปิดใหม่) = เริ่มเล่นทันที
     let autostart = false;
     try { autostart = sessionStorage.getItem('remnant.autostart') === '1'; sessionStorage.removeItem('remnant.autostart'); } catch { /* ไม่เป็นไร */ }
@@ -383,14 +414,22 @@ export class App {
   }
 
   private showTitle(): void {
+    const found = () => [...this.scanLog.records.values()].filter((r) => r.seen.length || r.deposited).length;
+    this.hud.root.hidden = true;
+    this.scanCard.root.hidden = true;
+    this.bodyFx.hide();
+    this.audio.idle();
+    // กลับจากเกมที่เล่นอยู่ = โลกในหน่วยความจำคือของจริงล่าสุด (บันทึกในเครื่องอาจเขียนไม่สำเร็จ) ไม่อ่านมาทับ
+    if (this.live) {
+      this.title.show({ body: this.bodyNumber, day: Math.floor(this.gameTime / DAY_SECONDS) + 1, found: found() });
+      return;
+    }
     const d = readSave();
     // ให้หน้าเริ่มเกมเป็นช่วงแดดเย็นแบบในมอคอัป
     this.gameTime = d ? d.gameTime : (17.6 / 24) * DAY_SECONDS;
     this.skyState = skyAt(this.gameTime);
     if (d) this.scanLog.load(d.scanLog);
-    const found = d ? [...this.scanLog.records.values()].filter((r) => r.seen.length || r.deposited).length : 0;
-    this.hud.root.hidden = true;
-    this.title.show(d ? { body: d.bodyNumber, day: Math.floor(d.gameTime / DAY_SECONDS) + 1, found } : null);
+    this.title.show(d ? { body: d.bodyNumber, day: Math.floor(d.gameTime / DAY_SECONDS) + 1, found: found() } : null);
   }
 
   private startPlaying(): void {
@@ -432,31 +471,52 @@ export class App {
   }
 
   /** บันทึกความคืบหน้าทั้งหมดลงเบราว์เซอร์ */
-  save(): boolean {
+  save(over: Partial<SaveData> = {}): boolean {
     // ยังอยู่หน้าแรกและยังไม่ได้กดเล่น โลกในเครื่องยังเปล่า บันทึกตอนนี้จะทับของเดิมทิ้ง
-    if (!this.live) return false;
+    if (!this.live || this.saveBlocked) return false;
+    // ร่างที่โหลแตกแล้วแต่ยังไม่เข้าจอตาย ห้ามบันทึก (โหลดกลับมาจะเดินได้ทั้งที่ร้าวครบ) · ยกเว้นบันทึกสภาพหลังตายที่ startDeath ส่งมา
+    if (this.body.dead && !over.player) return false;
+    // แท็บอื่นเขียนบันทึกใหม่กว่าที่แท็บนี้รู้ = มีเกมเปิดอยู่อีกแท็บ หยุดบันทึกจากแท็บนี้ ไม่ให้ของเก่าทับของใหม่
+    const stored = storedSavedAt();
+    if (stored > this.lastSavedAt + 1) {
+      this.saveBlocked = true;
+      this.hud.toast(t('otherTab'), 'danger', 8);
+      return false;
+    }
     const p = this.player;
     const d: SaveData = {
       version: SAVE_VERSION,
       savedAt: Date.now(),
       gameTime: this.gameTime,
       bodyNumber: this.bodyNumber,
-      player: { x: p.x, z: p.z, heading: p.heading },
+      player: { x: p.x, z: p.z, heading: p.heading, y: p.y },
       loadout: this.loadout,
       shipChoice: this.shipChoice,
       scanLog: this.scanLog.serialize(),
       explore: this.explore.serialize(),
       takenProps: this.props.all.filter((x) => x.taken).map((x) => x.prop.key),
-      corpses: this.corpses.map((c) => ({ n: c.n, x: c.x, z: c.z, slots: c.slots })),
-      droppedBags: this.droppedBags.map((b) => ({ x: b.x, z: b.z, bag: b.bag, beacon: b.beacon })),
+      corpses: this.corpses.map((c) => ({ n: c.n, x: c.x, z: c.z, y: c.y, slots: c.slots })),
+      droppedBags: this.droppedBags.map((b) => ({ x: b.x, z: b.z, y: b.y, bag: b.bag, beacon: b.beacon })),
       body: { oxygen: this.body.oxygen, cracks: this.body.cracks, warmth: this.body.warmth },
+      ...over,
     };
-    return writeSave(d);
+    const ok = writeSave(d);
+    if (ok) this.lastSavedAt = d.savedAt;
+    else if (!this.saveWarned) {
+      this.saveWarned = true;
+      this.hud.toast(t('saveFailed'), 'danger', 8);
+    }
+    return ok;
   }
 
   /** โหลดความคืบหน้าที่บันทึกไว้ */
   restore(d: SaveData): void {
-    this.live = true;
+    // ล้างซากกับกระเป๋าที่อยู่ในโลกก่อน (กันของงอกซ้ำ)
+    for (const c of this.corpses) disposeObject(c.object);
+    for (const b of this.droppedBags) disposeObject(b.object);
+    this.corpses.length = 0;
+    this.droppedBags.length = 0;
+    this.lastSavedAt = d.savedAt;
     this.gameTime = d.gameTime;
     this.bodyNumber = d.bodyNumber;
     this.loadout = { belt: d.loadout.belt.slice(0, 9), arms: d.loadout.arms.slice(0, 4) };
@@ -467,24 +527,27 @@ export class App {
     for (const k of d.takenProps) this.props.take(k);
     for (const c of d.corpses) {
       const obj = remainsModel();
-      const y = this.terrain.heightAt(c.x, c.z);
+      const y = c.y ?? this.terrain.heightAt(c.x, c.z);
       obj.position.set(c.x, y, c.z);
       this.scene.add(obj);
       this.corpses.push({ key: `remains-${c.n}`, n: c.n, x: c.x, y, z: c.z, slots: c.slots, object: obj });
     }
     for (const b of d.droppedBags) {
       const object = droppedBagModel();
-      const y = this.terrain.heightAt(b.x, b.z);
+      const y = b.y ?? this.terrain.heightAt(b.x, b.z);
       object.position.set(b.x, y, b.z);
       this.scene.add(object);
       this.droppedBags.push({ id: this.bagSeq++, x: b.x, y, z: b.z, bag: b.bag, beacon: b.beacon, object });
     }
-    this.body.oxygen = d.body.oxygen;
-    this.body.cracks = d.body.cracks;
+    this.body.oxygen = Math.max(0.05, d.body.oxygen);
+    // รอยร้าวครบแล้วโหลแตก บันทึกแบบนั้นไม่ควรมี ถ้ามีก็ไม่ให้เกิดร่างเดินได้ที่ร้าวครบ
+    this.body.cracks = Math.min(d.body.cracks, BODY.maxCracks - 1);
     this.body.warmth = d.body.warmth;
-    this.worldGround.contextY = Infinity;
+    // ยืนในถ้ำหรือบนหลังคาตอนบันทึก โหลดกลับชั้นเดิม (บันทึกเก่าไม่มี y ใช้ชั้นบนสุดแบบเดิม)
+    this.worldGround.contextY = d.player.y !== undefined ? d.player.y + 0.5 : Infinity;
     this.player.place(d.player.x, d.player.z, d.player.heading);
     this.rig.snap(this.player);
+    this.live = true;
   }
 
   /** เสียงธรรมชาติตามที่อยู่ เวลา และฝีเท้า */
@@ -508,7 +571,7 @@ export class App {
       this.lastStep = step;
       if (p.state === 'ground' && p.speed > 0.4) {
         let surface: Surface = 'grass';
-        if (this.terrain.heightAt(p.x, p.z) < 2.1) surface = 'water';
+        if (this.terrain.heightAt(p.x, p.z) < 2.1 && p.y < WORLD.waterLevel + 0.6) surface = 'water';
         else if (this.caveDepth > 0.05) surface = 'cave';
         else if (p.y > this.terrain.heightAt(p.x, p.z) + 0.5) surface = 'rock';
         else if (distToPolyline(p.x, p.z, ROAD) < ROAD_WIDTH) surface = 'road';
@@ -559,9 +622,11 @@ export class App {
   /** หมุนลูกกลิ้งเมาส์: แขนหลักถือของช่องถัดไปที่ไม่ว่าง */
   private cycleMainArm(dir: number): void {
     const cur = this.loadout.arms[0] ?? -1;
+    // ข้ามช่องที่แขนอื่นถืออยู่ ไม่อย่างนั้นของในแขนอื่นจะสลับไปมาเป็นลูกโซ่ (กด Q แล้วไม่ใช่ปืนหมึก)
+    const held = new Set(this.loadout.arms.slice(1).filter((a): a is number => a !== null));
     for (let k = 1; k <= 9; k++) {
       const i = (((cur + k * Math.sign(dir)) % 9) + 9) % 9;
-      if (this.loadout.belt[i]) { equipToArm(this.loadout, i); return; }
+      if (this.loadout.belt[i] && !held.has(i)) { equipToArm(this.loadout, i); return; }
     }
   }
 
@@ -595,7 +660,7 @@ export class App {
     for (const s of this.cavesView.scannables) if (Math.abs(s.x - p.x) < 30 && Math.abs(s.z - p.z) < 30) test(s.key, s.kind, s.x, s.y, s.z);
     for (const an of this.animals.scanTargets()) if (Math.abs(an.x - p.x) < 30 && Math.abs(an.z - p.z) < 30) test(an.key, an.kind, an.x, an.y, an.z);
     const ff = this.animals.nearestFirefly(p.x, p.z);
-    if (ff) test(`firefly-${Math.round(ff.x)}-${Math.round(ff.z)}`, 'firefly', ff.x, ff.y, ff.z);
+    if (ff) test(`firefly-${ff.i}`, 'firefly', ff.x, ff.y, ff.z);
     const bp = this.town.bridge[0];
     if (bp && Math.abs(bp.x - p.x) < 40 && Math.abs(bp.z - p.z) < 40) test('bridge-0', 'bridge', bp.x, bp.y1, bp.z);
     const found = best as ScanTarget | null;
@@ -630,11 +695,11 @@ export class App {
       if (add > 0 && !this.body.dead) this.hud.toast(`${t('cracked')} · ${t('sealWithGlue')}`, 'danger');
       p.lastFall = 0;
     }
-    const nearShip = Math.hypot(p.x - SHIP.x, p.z - SHIP.z) < 12;
+    const nearShip = Math.hypot(p.x - SHIP.x, p.z - SHIP.z) < SHIP_WARM_RADIUS;
     const night = this.sky.night;
     this.body.update(dt, {
       underwater: p.underwater,
-      gas: this.gasAt(p.x, p.y + 1.7, p.z),
+      gas: this.gasAt(p.x, p.y + MOVE.headHeight, p.z),
       cold: Math.max(0, night * 1.1 - 0.1),
       shelter: nearShip || this.shelterAt(p.x, p.y, p.z),
     });
@@ -654,9 +719,11 @@ export class App {
     const slots = this.loadout.belt.slice();
     const gear = slots.filter((s) => s && s.kind === 'gear').length;
     let items = slots.filter((s) => s && s.kind === 'item').length;
-    for (const s of slots) if (s && s.kind === 'gear' && s.id === 'bag') items += (s as { contents?: { items: unknown[] } }).contents?.items.length ?? 0;
+    // นับของทุกชั้น รวมกระเป๋าที่ซ้อนอยู่ข้างใน
+    const countIn = (c: BagContents): number => c.items.length + c.bags.reduce((n, b) => n + countIn(b.contents), 0);
+    for (const s of slots) if (isBag(s) && s.contents) items += countIn(s.contents);
     const obj = remainsModel();
-    obj.position.set(p.x, this.terrain.heightAt(p.x, p.z), p.z);
+    obj.position.set(p.x, this.worldGround.groundAt(p.x, p.z, p.y), p.z);
     obj.rotation.y = p.heading;
     this.scene.add(obj);
     this.corpses.push({ key: `remains-${this.bodyNumber}`, n: this.bodyNumber, x: p.x, y: obj.position.y, z: p.z, slots, object: obj });
@@ -666,7 +733,11 @@ export class App {
     this.input.unlock();
     this.hud.root.hidden = true;
     this.deathScreen.show(cause, this.bodyNumber, gear, items);
+    this.scanCard.root.hidden = true;
+    this.audio.idle();
     this.dying = { t: 0, cause };
+    // บันทึกสภาพ "ตายแล้ว" ทันที (ร่างถัดไปที่จุดเกิด ของอยู่ที่ซาก) ปิดแท็บระหว่างจอตายแล้วจะไม่ฟื้นแบบไม่เคยตาย
+    this.save({ bodyNumber: this.bodyNumber + 1, player: { x: SPAWN_POINT.x, z: SPAWN_POINT.z, heading: SPAWN_POINT.heading }, body: { oxygen: 1, cracks: 0, warmth: 1 } });
   }
 
   private updateDeath(dt: number): void {
@@ -686,72 +757,89 @@ export class App {
     this.player.stamina.exhausted = false;
     this.rig.snap(this.player);
     this.hud.toast(t('respawned'));
-    this.shipScreen.show(this.shipChoice, t('respawned'));
+    this.respawnShip = true;
+    this.shipScreen.show(this.shipChoice, () => t('respawned'));
   }
 
   closeScreens(): void {
     this.inventory.hide();
     this.shipScreen.hide();
+    this.resumeControl();
   }
 
-  /** ป้ายกดปุ่ม: ของใกล้ตัวที่เก็บได้ ยาน กระเป๋าที่วางไว้ */
+  /**
+   * ปิดหน้าจอซ้อนแล้วกลับมาคุมกล้องได้ทันที ทุกทางที่ปิด (Esc ปุ่ม M Tab ออกเดินทาง)
+   * ปลดโฟกัสปุ่มที่เพิ่งคลิก (กันเว้นวรรคไปกดปุ่มซ้ำหลังหน้าจอปิด)
+   */
+  private resumeControl(): void {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    if (this.started && !this.dying && !this.anyScreenOpen()) this.input.lock();
+  }
+
+  /**
+   * ป้ายกดปุ่ม: ของใกล้ตัวที่เก็บได้ ซาก กระเป๋าที่วางไว้ ยาน
+   * ของที่อยู่ใกล้ที่สุดชนะ (ต้องอยู่ชั้นเดียวกัน ต่างความสูงไม่เกิน 1.6 ม.) · ยานรับเฉพาะตอนไม่มีของอื่นในระยะหยิบ
+   * เดิมยานถูกเช็กก่อน กระเป๋าหรือซากที่อยู่ใกล้ยานจึงหยิบคืนไม่ได้อีกเลย
+   */
   private updateInteract(): void {
     const p = this.player;
     this.interact = null;
-    if (Math.hypot(p.x - SHIP.x, p.z - SHIP.z) < 9) {
-      this.interact = { key: 'E', text: t('enterShip'), run: () => this.enterShip() };
-      return;
-    }
+    const reach = (x: number, y: number, z: number, r: number) => {
+      const d = Math.hypot(x - p.x, z - p.z);
+      return d < r && Math.abs(y - p.y) < 1.6 ? d : Infinity;
+    };
+    let bestD = Infinity;
     for (const c of this.corpses) {
-      if (Math.hypot(c.x - p.x, c.z - p.z) < 2.2 && c.slots.some(Boolean)) {
-        this.interact = {
-          key: 'E',
-          text: t('takeFromBody'),
-          run: () => {
-            c.slots = takeFromRemains(this.loadout, c.slots);
-            this.hud.toast(c.slots.some(Boolean) ? t('bodySomeLeft') : t('tookFromBody'));
-          },
-        };
-        return;
-      }
+      if (!c.slots.some(Boolean)) continue;
+      const d = reach(c.x, c.y, c.z, 2.2);
+      if (d >= bestD) continue;
+      bestD = d;
+      this.interact = {
+        key: 'E',
+        text: t('takeFromBody'),
+        run: () => {
+          c.slots = takeFromRemains(this.loadout, c.slots);
+          this.hud.toast(c.slots.some(Boolean) ? t('bodySomeLeft') : t('tookFromBody'));
+        },
+      };
     }
     for (const b of this.droppedBags) {
-      if (Math.hypot(b.x - p.x, b.z - p.z) < 1.8) {
-        this.interact = {
-          key: 'E',
-          text: `${t('takeBag')} · G ${t('beacon')}`,
-          run: () => {
-            if (!takeBag(this.loadout, b.bag)) { this.hud.toast(t('bagFull'), 'warn'); return; }
-            this.scene.remove(b.object);
-            this.droppedBags.splice(this.droppedBags.indexOf(b), 1);
-          },
-          alt: { code: 'KeyG', run: () => { b.beacon = true; this.hud.toast(t('beaconOn')); } },
-        };
-        return;
-      }
+      const d = reach(b.x, b.y, b.z, 1.8);
+      if (d >= bestD) continue;
+      bestD = d;
+      this.interact = {
+        key: 'E',
+        text: `${t('takeBag')} · G ${t('beacon')}`,
+        run: () => {
+          if (!takeBag(this.loadout, b.bag)) { this.hud.toast(t('bagFull'), 'warn'); return; }
+          disposeObject(b.object);
+          this.droppedBags.splice(this.droppedBags.indexOf(b), 1);
+        },
+        alt: { code: 'KeyG', run: () => { b.beacon = true; this.hud.toast(t('beaconOn')); } },
+      };
     }
-    let best: { prop: { kind: string; key: string; x: number; z: number } } | null = null;
-    let bd = 2.0;
     for (const pp of this.props.all) {
       if (pp.taken) continue;
       const k = kindOf(pp.prop.kind);
       if (!k?.small) continue;
-      const d = Math.hypot(pp.prop.x - p.x, pp.prop.z - p.z);
-      if (d < bd) { bd = d; best = pp; }
-    }
-    if (best) {
-      const k = kindOf(best.prop.kind)!;
-      const key = best.prop.key;
+      const d = reach(pp.prop.x, pp.y, pp.prop.z, 2.0);
+      if (d >= bestD) continue;
+      bestD = d;
+      const key = pp.prop.key;
+      const special = !!pp.prop.special && !!k.log;
       this.interact = {
         key: 'E',
         text: `${t('pick')} ${shownName(k, this.scanLog.truth(k.id))} · ${k.kg!.toFixed(2)} ${t('kg')}`,
         run: () => {
-          const r = pickUp(this.loadout, { itemId: k.id, kg: k.kg! });
+          const r = pickUp(this.loadout, { itemId: k.id, kg: k.kg!, special });
           if (r === 'full') { this.hud.toast(t('bagFull'), 'warn'); return; }
           this.props.take(key);
           this.hud.toast(r === 'bag' ? t('pickedBag') : t('pickedHand'));
         },
       };
+    }
+    if (!this.interact && Math.hypot(p.x - SHIP.x, p.z - SHIP.z) < SHIP_ENTER_RADIUS) {
+      this.interact = { key: 'E', text: t('enterShip'), run: () => this.enterShip() };
     }
   }
 
@@ -762,7 +850,7 @@ export class App {
     const object = droppedBagModel();
     const x = p.x - Math.sin(p.heading) * 0.8;
     const z = p.z - Math.cos(p.heading) * 0.8;
-    const y = this.terrain.heightAt(x, z);
+    const y = this.worldGround.groundAt(x, z, p.y);
     object.position.set(x, y, z);
     this.scene.add(object);
     this.droppedBags.push({ id: this.bagSeq++, x, y, z, bag, beacon: false, object });
@@ -771,13 +859,20 @@ export class App {
 
   enterShip(): void {
     const items = depositAll(this.loadout);
-    for (const it of items) this.scanLog.deposit(it.itemId);
+    let newLog = false;
+    for (const it of items) newLog = this.scanLog.deposit(it.itemId, it.special) || newLog;
     this.save();
     this.input.unlock();
-    this.shipScreen.show(this.shipChoice, items.length ? `${t('depositedN')} ${items.length}` : t('nothingDeposited'));
+    const n = items.length;
+    this.respawnShip = false;
+    this.shipScreen.show(this.shipChoice, () => {
+      const m = n ? tf('depositedN', { n }) : t('nothingDeposited');
+      return newLog ? `${m} · ${t('logUnlocked')}` : m;
+    });
   }
 
   private depart(c: ShipChoice): void {
+    this.respawnShip = false;
     this.shipChoice = c;
     this.loadout = buildLoadout(c);
     this.closeScreens();
@@ -796,18 +891,20 @@ export class App {
       this.input.unlock();
     } else {
       this.bigMap.hide();
+      this.resumeControl();
     }
   }
 
   private update(dt: number): void {
     this.elapsed += dt;
     this.input.setTime(this.elapsed);
+    this.hud.setTime(this.elapsed);
+    this.input.captureTab = this.started && !this.settingsScreen.open && !this.title.open;
     if (!this.started || this.settingsScreen.open) {
-      // Esc ในหน้าตั้งค่า = กลับเข้าเกม · ในคอลเลกชันที่เปิดจากหน้าเริ่มเกม = ปิด
-      if (this.input.wasPressed('Escape')) {
-        if (this.settingsScreen.open) { this.settingsScreen.hide(); if (this.started) this.input.lock(); }
-        else if (this.inventory.open) this.closeScreens();
-      }
+      // Esc ในหน้าตั้งค่า = กลับเข้าเกม · ในคอลเลกชันที่เปิดจากหน้าเริ่มเกม Esc Tab I = ปิด (ป้ายบนปุ่มบอกไว้)
+      const close = this.input.wasPressed('Escape') || this.input.wasPressed('Tab') || this.input.wasPressed('KeyI');
+      if (this.settingsScreen.open && this.input.wasPressed('Escape')) { this.settingsScreen.hide(); this.resumeControl(); }
+      else if (!this.started && this.inventory.open && close) this.closeScreens();
       this.updateIdle(dt);
       this.input.endFrame();
       return;
@@ -827,7 +924,9 @@ export class App {
       return;
     }
     if (this.inventory.open || this.shipScreen.open) {
-      if (this.input.wasPressed('Escape')) this.closeScreens();
+      // หน้ายานหลังเกิดใหม่ Esc = ออกเดินทางด้วยของที่เลือกไว้ (เดิมปิดแล้วได้ร่างมือเปล่า)
+      if (this.input.wasPressed('Escape') && this.shipScreen.open && this.respawnShip) this.depart(this.shipScreen.choice);
+      else if (this.input.wasPressed('Escape')) this.closeScreens();
       this.input.endFrame();
       return;
     }
@@ -843,7 +942,7 @@ export class App {
       this.input.endFrame();
       return;
     }
-    for (let i = 0; i < 9; i++) if (this.input.wasPressed(`Digit${i + 1}`)) equipToArm(this.loadout, i);
+    for (let i = 0; i < 9; i++) if (this.input.wasPressed(`Digit${i + 1}`) || this.input.wasPressed(`Numpad${i + 1}`)) equipToArm(this.loadout, i);
     if (this.input.wheel !== 0) this.cycleMainArm(this.input.wheel);
     WIND.uTime.value = this.elapsed;
     this.water.update(dt);
@@ -938,10 +1037,25 @@ export class App {
       belt: beltViews(this.loadout, name),
       markers: this.markers(),
       prompt: this.tools.scanning
-        ? { key: t('keyLeft'), text: this.tools.scanProgress < 0 ? t('scanNothing') : `${t('scanning')} ${Math.round(this.tools.scanProgress * 100)}%` }
-        : this.interact ? { key: this.interact.key, text: this.interact.text } : null,
+        ? { key: ARM_KEY_LABEL[this.tools.scanArm](), text: this.tools.scanProgress < 0 ? t('scanNothing') : `${t('scanning')} ${Math.round(this.tools.scanProgress * 100)}%` }
+        : this.interact ? { key: this.interact.key, text: this.interact.text }
+        // ขอล็อกเมาส์ไม่สำเร็จ บอกให้คลิกจอ (เดิมกล้องไม่หมุนเฉย ๆ ไม่มีอะไรบอก)
+        : !this.input.locked && this.input.lockFailed ? { key: '', text: t('clickToPlay') } : null,
       reticle: this.aiming || this.tools.aiming,
+      status: this.statusChips(),
     }, this.elapsed);
+  }
+
+  /** ป้ายสถานะค้าง: บอกสิ่งที่กำลังทำร้ายร่างกายอยู่ และวิธีแก้ */
+  private statusChips(): { text: string; kind: 'warn' | 'danger' | '' }[] {
+    const out: { text: string; kind: 'warn' | 'danger' | '' }[] = [];
+    const p = this.player;
+    const sheltered = Math.hypot(p.x - SHIP.x, p.z - SHIP.z) < SHIP_WARM_RADIUS || this.shelterAt(p.x, p.y, p.z);
+    if (this.body.cracks > 0) out.push({ text: tf('crackStatus', { n: this.body.cracks }), kind: 'danger' });
+    if (this.body.draining) out.push({ text: t('oxygenLow'), kind: 'danger' });
+    if (this.body.warmth < 0.95 && !sheltered && this.sky.night > 0.3) out.push({ text: t('cold'), kind: 'warn' });
+    else if (this.body.warmth < 0.99 && sheltered) out.push({ text: t('warmNearShip'), kind: '' });
+    return out;
   }
 
   private measureFps(dt: number): void {
