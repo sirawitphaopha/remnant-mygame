@@ -1,3 +1,4 @@
+import { RUIN_PLACES } from '../world/ruins';
 import { WORLD } from '../config/game';
 import type { ExploreMap } from '../core/explore';
 import { BRIDGE, CAVES, LAKE, REGIONS, TOWN } from '../world/layout';
@@ -20,6 +21,8 @@ const PLACES: { key: StrKey; x: number; z: number }[] = [
   { key: 'placeOrchard', x: REGIONS.orchard.x, z: REGIONS.orchard.z },
   { key: 'placeWetland', x: REGIONS.wetland.x + 150, z: REGIONS.wetland.z + 120 },
   { key: 'placeDense', x: REGIONS.dense.x, z: REGIONS.dense.z },
+  // ซากอารยธรรมนอกเมือง (ช่วง 10)
+  ...RUIN_PLACES.map((p) => ({ key: p.key as StrKey, x: p.at.x, z: p.at.z })),
 ];
 const ZOOMS = [1, 2, 4, 8];
 

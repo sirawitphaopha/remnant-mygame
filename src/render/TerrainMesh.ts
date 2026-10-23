@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { WORLD } from '../config/game';
-import { MOUNTAINS, ROAD_WIDTH, TOWN, distToRoads } from '../world/layout';
+import { MOUNTAINS, RAILWAY, ROAD_WIDTH, TOWN, distToPolyline, distToRoads } from '../world/layout';
 import { pavedLeft } from '../world/scatter';
 import { Simplex2 } from '../world/noise';
 import { BIOME, BIOME_COUNT, BIOME_STEP } from '../world/terrainGen';
@@ -36,6 +36,7 @@ const C = {
   // ยางมะตอยเก่าสะท้อนแสงราว 1 ใน 10 (ค่าเดิม 0.22 กลางแดดดูขาวเหมือนลานปูน)
   asphalt: new THREE.Color(0.085, 0.085, 0.09),
   sidewalk: new THREE.Color(0.3, 0.29, 0.27),
+  ballast: new THREE.Color(0.24, 0.22, 0.2),
   concrete: new THREE.Color(0.45, 0.44, 0.41),
 };
 
@@ -332,6 +333,9 @@ export class TerrainMesh {
     // แนวถนนที่ดินกลบแล้ว ดินร่วนสีเข้มกว่าข้างทาง ยังพอเห็นเป็นแนว
     out.lerp(C.mud, roadBed * (1 - left) * 0.35);
     out.lerp(C.asphalt, asphalt);
+    // หินโรยทางรถไฟร้าง ดินกลบไปบ้าง
+    const rail = distToPolyline(x, z, RAILWAY);
+    if (rail < 2.6) out.lerp(C.ballast, (1 - smooth(1.4, 2.6, rail)) * (0.35 + 0.5 * pavedLeft(x - 13, z + 7)));
     // ลานคอนกรีตในเมือง · ทางเท้าสองข้างถนนในเมือง (ขอบถนนถึงหน้าตึก)
     const dt = Math.hypot(x - TOWN.x, z - TOWN.z);
     const walk = dt < TOWN.radius * 1.2 ? smooth(ROAD_WIDTH + 0.2, ROAD_WIDTH + 0.7, dr) * (1 - smooth(6.2, 6.8, dr)) * pavedLeft(x + 31, z - 17) : 0;

@@ -42,6 +42,7 @@ import { remainsModel } from '../render/models/hero';
 import { Structures } from '../world/structures';
 import { buildCaves, caveAt, type Cave } from '../world/caves';
 import { ROCK_SHAPE, rockTypeOf } from '../world/rocks';
+import { planRuins } from '../world/ruins';
 import { applyDetail } from '../render/detail';
 import { buildTown, buildingAt, grassBlocked, treeBlocked, type Building, type TownLayout } from '../world/town';
 import { Town } from '../render/Town';
@@ -247,7 +248,7 @@ export class App {
       Math.hypot(x - fallSpot.x, z - fallSpot.z) < 18 ||
       vehicles.some((v) => Math.hypot(x - v.x, z - v.z) < (v.kind === 'bus' ? 7.5 : 3.6)) ||
       treeBlocked(this.town, x, z);
-    this.vegetation = new Vegetation(this.terrain, this.q, treeNo);
+    this.vegetation = new Vegetation(this.terrain, this.q, treeNo, planRuins().trees);
     this.scene.add(this.vegetation.group);
     this.grass = new Grass(this.terrain, this.terrainMesh, this.q, (x, z) => Math.hypot(x - fallSpot.x, z - fallSpot.z) < 18 || grassBlocked(this.town, x, z));
     this.scene.add(this.grass.mesh);

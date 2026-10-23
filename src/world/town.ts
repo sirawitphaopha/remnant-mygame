@@ -1,6 +1,7 @@
 import { WORLD } from '../config/game';
 import { BRIDGE, RIVER_WIDTH } from './layout';
 import { buildingParts, planExtras, planTown, toWorld, type Building, type TownBox, type TownExtra } from './townPlan';
+import { planRuins } from './ruins';
 import { Structures as S } from './structures';
 import type { Structures } from './structures';
 import type { Terrain } from './Terrain';
@@ -28,14 +29,16 @@ export function buildTown(t: Terrain, s: Structures): TownLayout {
   const parts = new Map<string, TownBox[]>();
   const items: TownLayout['items'] = [];
   // ที่ว่างในเมืองวางบนพื้นตรงกลางที่ดิน (ของชิ้นเตี้ย ๆ พื้นลาดนิดหน่อยไม่เป็นไร)
-  const extras: TownExtra[] = planExtras().map((e) => ({ ...e, y: t.heightAt(e.x, e.z) }));
+  // ที่ว่างในเมือง + ซากอารยธรรมนอกเมือง (world/ruins.ts ช่วง 10) ใช้ตัวสร้างกับตัววาดชุดเดียวกัน
+  const ruins = planRuins();
+  const extras: TownExtra[] = [...planExtras(), ...ruins.extras].map((e) => ({ ...e, y: t.heightAt(e.x, e.z) }));
   for (const e of extras) {
     for (const bx of e.boxes) {
       const w = toWorld(e, bx.x, bx.z);
       s.add({ x: w.x, z: w.z, hx: bx.hx, hz: bx.hz, rot: e.rot, y0: e.y + bx.y0, y1: e.y + bx.y1, tag: e.key });
     }
   }
-  for (const p of planTown()) {
+  for (const p of [...planTown(), ...ruins.buildings]) {
     // ฐานตึกเท่ากับจุดต่ำสุดของพื้นใต้ตึก ตึกไม่ลอย
     let y = Infinity;
     for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) {
@@ -129,12 +132,15 @@ export function treeBlocked(L: TownLayout, x: number, z: number): boolean {
     if (b.floors > 1 && lx > hw - 4.8) return true;
   }
   for (const e of L.extras) {
-    if (e.kind !== 'waterTower' && e.kind !== 'playground') continue;
+    if (!TREE_FREE.has(e.kind)) continue;
     const [lx, lz] = toLocal(e, x, z);
     if (Math.abs(lx) < e.w / 2 + 1 && Math.abs(lz) < e.d / 2 + 1) return true;
   }
   return false;
 }
+
+/** ที่ว่างที่ต้นไม้ไม่ขึ้น (ทางรถไฟ ขบวนรถ เสาไฟฟ้าล้ม ต้นไม้ขึ้นแทรกได้) */
+const TREE_FREE = new Set<TownExtra['kind']>(['waterTower', 'playground', 'lookout', 'gasCanopy', 'platform', 'campsite', 'sawyard']);
 
 /** หญ้าไม่ขึ้นในตึกที่ยังมีหลังคา (ซากที่หลังคาหายหญ้าขึ้นได้) */
 export function grassBlocked(L: TownLayout, x: number, z: number): boolean {

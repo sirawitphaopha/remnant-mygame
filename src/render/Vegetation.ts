@@ -3,6 +3,7 @@ import type { QualityPreset } from '../config/quality';
 import { hash2 } from '../world/noise';
 import { DEBRIS_KINDS, PLANT_KINDS, scatterDebris, scatterPlants, scatterTrees, type DebrisKind, type PlantKind, type Placed, type TreeSet } from '../world/scatter';
 import { ROCK_TYPES, scatterRocks } from '../world/rocks';
+import type { ForcedTree } from '../world/ruins';
 import { rockModel } from './models/rocks';
 import { applyDetail } from './detail';
 import type { Terrain } from '../world/Terrain';
@@ -80,8 +81,8 @@ export class Vegetation {
   /** พืชเล็กรอบตัวตอนนี้ (ใช้หาเป้าสแกน) */
   plantsNow: Record<PlantKind, Placed[]> = { fern: [], flower: [], bush: [], mushroom: [], moss: [] };
 
-  constructor(private terrain: Terrain, private q: QualityPreset, blocked: (x: number, z: number) => boolean = () => false) {
-    this.trees = scatterTrees(terrain, blocked);
+  constructor(private terrain: Terrain, private q: QualityPreset, blocked: (x: number, z: number) => boolean = () => false, forced: ForcedTree[] = []) {
+    this.trees = scatterTrees(terrain, blocked, forced);
     this.rocks = scatterRocks(terrain);
     this.debris = scatterDebris(terrain, blocked);
 

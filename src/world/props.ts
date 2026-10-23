@@ -1,6 +1,7 @@
 import { WORLD } from '../config/game';
 import { BRIDGE, RIVER, RIVER_WIDTH, ROAD, ROADS, ROAD_WIDTH, SHIP, TOWN, TOWN_STREETS, distToPolyline, type P2 } from './layout';
 import { rng } from './noise';
+import { planRuins } from './ruins';
 
 // ของมนุษย์ที่วางในโลก · ของใหญ่ (รถ เสาไฟ ป้าย) สแกนได้อย่างเดียว · ของชิ้นเล็กเก็บได้
 // วางด้วยตัวสุ่มที่ตั้งเลขไว้ ผลเดิมทุกครั้ง
@@ -142,6 +143,8 @@ export function placeProps(): Prop[] {
     const k = kind ?? SMALL_KINDS[Math.floor(r() * SMALL_KINDS.length)];
     put(k, { x, z }, r() * 6.28, { special });
   };
+  // ซากรถในป่าตามถนนป่าเก่า (world/ruins.ts) บางคันต้นไม้ขึ้นทะลุหลังคา
+  planRuins().wrecks.forEach((w, i) => put('car', { x: w.x, z: w.z }, w.rot, { variant: 60 + i }));
   // ตุ๊กตาพิเศษในรถคันที่ 3 · ของในเมืองย้ายเข้าไปอยู่ในห้องของตึก (world/town.ts) รวมโทรศัพท์กับกรอบรูปพิเศษ
   const car3 = cars.find((c) => c.special)!;
   addSmall(car3.x + 1.6, car3.z + 0.8, 'teddy', true);

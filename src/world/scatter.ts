@@ -1,5 +1,5 @@
 import { WORLD } from '../config/game';
-import { CAVES, REGIONS, RIVER, RIVER_WIDTH, ROAD_WIDTH, SHIP, TOWN, distToPolyline, distToRoads } from './layout';
+import { CAVES, RAILWAY, REGIONS, RIVER, RIVER_WIDTH, ROAD_WIDTH, SHIP, TOWN, distToPolyline, distToRoads } from './layout';
 import { BIOME, type BiomeId } from './terrainGen';
 import { ALL_TREE_KINDS, ORCHARD_ROWS, SPECIES_BY_ID, deadKindOf, pickSpecies, type TreeKind } from './trees';
 import { Simplex2, hash2 } from './noise';
@@ -73,7 +73,7 @@ export function canPlace(t: Terrain, x: number, z: number, maxSlope: number, roa
  * scale = ความสูงจริง ÷ 10 (โมเดลทุกชนิดปั้นสูง 10 ม.) · ชนิดตามชนิดพื้นที่ (ป่า 5 แบบ) · ป่าที่เคยเป็นไร่ปลูกเป็นแถว
  * blocked = ที่ห้ามขึ้น (ในตึก) ส่งมาจากผู้เรียก
  */
-export function scatterTrees(t: Terrain, blocked: (x: number, z: number) => boolean = () => false): TreeSet[] {
+export function scatterTrees(t: Terrain, blocked: (x: number, z: number) => boolean = () => false, forced: { x: number; z: number; kind: string; height: number }[] = []): TreeSet[] {
   const cell = 7;
   const sets = new Map<TreeKind, Placed[]>(ALL_TREE_KINDS.map((k) => [k, []]));
   const add = (kind: TreeKind, x: number, z: number, height: number, rot: number) => {
@@ -94,6 +94,8 @@ export function scatterTrees(t: Terrain, blocked: (x: number, z: number) => bool
       // ถนนเก่าพันปี ยางมะตอยแตกเป็นดิน ต้นไม้ขึ้นบนแนวถนนได้ แต่บางกว่าข้างทาง (ดินบดอัดแน่น)
       const onRoad = distToRoads(x, z) < ROAD_WIDTH + 1.5;
       if (onRoad && hash2(i, j, 8) < 0.55) continue;
+      // ทางรถไฟร้าง หินโรยทางกับหมอนปูนทำให้ต้นไม้ขึ้นบางกว่าข้างทาง
+      if (distToPolyline(x, z, RAILWAY) < 2.4 && hash2(i, j, 9) < 0.75) continue;
       if (!canPlace(t, x, z, 0.32, onRoad ? -ROAD_WIDTH - 2 : 3) || blocked(x, z)) continue;
       const sp = pick(b, x, z, hash2(i, j, 4));
       const height = sp.height[0] + (sp.height[1] - sp.height[0]) * hash2(i, j, 6);
@@ -134,6 +136,8 @@ export function scatterTrees(t: Terrain, blocked: (x: number, z: number) => bool
       }
     }
   }
+  // ต้นไม้ที่ต้องขึ้นตรงจุดนั้น (ทะลุหลังคาตู้รถไฟ ทะลุซากรถ · world/ruins.ts)
+  forced.forEach((f, k) => { if (sets.has(f.kind as TreeKind)) add(f.kind as TreeKind, f.x, f.z, f.height, hash2(k, 3, 55) * Math.PI * 2); });
   return ALL_TREE_KINDS.map((kind) => ({ kind, items: sets.get(kind)! }));
 }
 

@@ -83,7 +83,9 @@ export interface RoomItem { x: number; z: number; y: number; kind: string; speci
 // ---------- วางตึก ----------
 
 /** ที่ว่างในเมืองที่ไม่ใช่ตึก (สวนกลางเมือง สุสาน สนามเด็กเล่น หอส่งน้ำ) */
-export type ExtraKind = 'park' | 'cemetery' | 'playground' | 'waterTower';
+export type ExtraKind = 'park' | 'cemetery' | 'playground' | 'waterTower'
+  // อารยธรรมนอกเมือง (world/ruins.ts)
+  | 'gasCanopy' | 'pylon' | 'lookout' | 'train' | 'campsite' | 'railway' | 'platform' | 'sawyard';
 
 export interface TownExtra {
   key: string;

@@ -74,7 +74,7 @@ const th = {
   mapZoomHint: 'ลูกกลิ้งซูม · ลากเพื่อเลื่อน · ดับเบิลคลิกดูทั้งแมพ', mapBodyN: 'ร่างที่ {n}', bagMark: 'กระเป๋า',
   placeTown: 'เมืองร้าง', placeLake: 'ทะเลสาบ', placeCave1: 'ถ้ำหินปูน', placeCave2: 'ถ้ำเหมืองเก่า', placeBridge: 'สะพานพัง',
   placeMountains: 'เทือกเขาหิมะ', placeRedwood: 'ป่าสนยักษ์', placeRainforest: 'หุบป่าดิบชื้น', placeDeciduous: 'ป่าผลัดใบ',
-  placeFlowers: 'ทุ่งดอกไม้', placeOrchard: 'สวนผลไม้ร้าง', placeWetland: 'ที่ลุ่มน้ำ', placeDense: 'ป่าทึบ',
+  placeFlowers: 'ทุ่งดอกไม้', placeOrchard: 'สวนผลไม้ร้าง', placeWetland: 'ที่ลุ่มน้ำ', placeDense: 'ป่าทึบ', placeVillage: 'หมู่บ้านกลางป่า', placeGas: 'ปั๊มน้ำมันร้าง', placeSawmill: 'โรงเลื่อย', placeRanger: 'ที่ทำการอุทยาน', placeLookout: 'หอดูไฟป่า', placeTrain: 'ขบวนรถไฟร้าง', placeStation: 'สถานีรถไฟร้าง',
   // รอบสอง ช่วง 0 (แก้จากผลตรวจ)
   logUnlocked: 'ได้บันทึกส่วนตัวของชิ้นนี้แล้ว',
   nestFailed: 'ใส่ซ้อนไม่ได้ ไม่มีกระเป๋าใบไหนรับน้ำหนักนี้ไหว',
@@ -156,7 +156,7 @@ const en: Record<StrKey, string> = {
   mapZoomHint: 'Scroll to zoom · drag to move · double-click for the whole map', mapBodyN: 'Body {n}', bagMark: 'Bag',
   placeTown: 'Abandoned Town', placeLake: 'Lake', placeCave1: 'Limestone Cave', placeCave2: 'Old Mine', placeBridge: 'Broken Bridge',
   placeMountains: 'Snow Range', placeRedwood: 'Giant Pine Forest', placeRainforest: 'Rainforest Gorge', placeDeciduous: 'Broadleaf Woods',
-  placeFlowers: 'Flower Fields', placeOrchard: 'Overgrown Orchard', placeWetland: 'Wetlands', placeDense: 'Deep Forest',
+  placeFlowers: 'Flower Fields', placeOrchard: 'Overgrown Orchard', placeWetland: 'Wetlands', placeDense: 'Deep Forest', placeVillage: 'Forest Village', placeGas: 'Old Gas Station', placeSawmill: 'Sawmill', placeRanger: 'Ranger Station', placeLookout: 'Fire Lookout', placeTrain: 'Abandoned Train', placeStation: 'Old Station',
   logUnlocked: 'Personal log unlocked',
   nestFailed: "Can't nest it · no bag can hold that much",
   unnestFailed: 'Belt full · no free slot for the bag',

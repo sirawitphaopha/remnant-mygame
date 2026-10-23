@@ -54,11 +54,13 @@ export function detailTexture(kind: DetailKind): THREE.DataTexture {
         h = 0.55 + grain * 0.12 + blotch * 0.2 - crack * 0.4;
       } else if (kind === 'bark') {
         // เปลือกไม้: ร่องตามแนวตั้งคดไปมา สันนูนระหว่างร่อง มีแผ่นเปลือกแตกเป็นช่วง
-        const warp = tileNoise(nz, u, v, 4, 2) * 0.08;
-        const ridge = Math.abs(Math.sin((u + warp) * Math.PI * 2 * 14));
-        const plates = tileNoise(nz, u * 3, v, 12, 2);
-        c = 0.42 + ridge * 0.22 + plates * 0.08;
-        h = ridge * 0.8 + plates * 0.15;
+        // ร่องเกือบตรงตามแนวตั้ง คดเล็กน้อย (เดิมคดมากเป็นคลื่นเหมือนลายนิ้วมือ) · ร่องขาดเป็นช่วงตามแผ่นเปลือก
+        const warp = tileNoise(nz, u, v, 3, 1) * 0.03;
+        const ridge = Math.pow(Math.abs(Math.sin((u + warp) * Math.PI * 2 * 10)), 0.6);
+        const plates = tileNoise(nz, u, v, 16, 2);
+        const brk = plates > 0.25 ? 0.6 : 1;
+        c = 0.4 + ridge * 0.24 * brk + plates * 0.08;
+        h = ridge * 0.8 * brk + plates * 0.15;
       } else if (kind === 'plaster') {
         // ปูนฉาบเก่าพันปี: คราบน้ำไหลเป็นทางตั้ง · ปูนกะเทาะเป็นแผ่น · รูพรุน · รอยร้าว
         const stain = tileNoise(nz, u * 0.35, v, 6, 3);
