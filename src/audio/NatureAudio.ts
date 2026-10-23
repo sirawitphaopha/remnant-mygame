@@ -8,6 +8,8 @@ export interface AudioEnv {
   forest: number;
   /** อยู่กลางทุ่งหญ้าสูงแค่ไหน 0 ถึง 1 (หญ้าเสียดสีกันตอนลมพัด) */
   field?: number;
+  /** ใกล้น้ำตกแค่ไหน 0 ถึง 1 */
+  fall?: number;
   /** ระยะถึงน้ำ (เมตร) */
   waterDist: number;
   /** อยู่ลึกในถ้ำ 0 ถึง 1 */
@@ -168,7 +170,7 @@ export class NatureAudio {
     // ใบไม้ในป่า กับหญ้าเสียดสีกลางทุ่ง ดังตามลมกระโชก (คลื่นลมพัดผ่านทุ่ง)
     this.set('leaves', this.beds.leaves.gain, outside * (e.forest * (0.02 + 0.07 * e.gust) + (e.field ?? 0) * (0.025 + 0.1 * e.gust)));
     // น้ำไหล: ใกล้แม่น้ำหรือทะเลสาบ
-    this.set('water', this.beds.water.gain, outside * 0.22 * Math.max(0, 1 - e.waterDist / 40));
+    this.set('water', this.beds.water.gain, outside * (0.22 * Math.max(0, 1 - e.waterDist / 40) + 0.5 * (e.fall ?? 0)));
     // ถ้ำ: เสียงต่ำ ๆ กับเสียงก้อง
     this.set('cave', this.beds.cave.gain, e.cave > 0.05 ? 0.12 : 0);
     this.reverbGain.gain.setTargetAtTime(e.cave > 0.05 ? 0.55 : 0.05, ctx.currentTime, 0.5);

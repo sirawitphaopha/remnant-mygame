@@ -30,7 +30,8 @@ export const SPECIES: Species[] = [
   { id: 'fox', move: 'walk', habitat: 'forest', active: 'always', count: 2, speed: 6, flee: 8, aggro: 0, ink: 'ignore', height: 0.45, size: 1 },
   { id: 'crow', move: 'fly', habitat: 'town', active: 'day', count: 4, speed: 8, flee: 10, aggro: 0, ink: 'flee', height: 0, size: 1 },
   { id: 'eagle', move: 'fly', habitat: 'sky', active: 'day', count: 1, speed: 10, flee: 0, aggro: 0, ink: 'ignore', height: 0, size: 1 },
-  { id: 'fish', move: 'swim', habitat: 'water', active: 'always', count: 6, speed: 2.5, flee: 5, aggro: 0, ink: 'flee', height: 0, size: 1 },
+  // ปลาย้ายไประบบฝูงปลา (render/Fish.ts รอบสอง ช่วง 6) เก็บชนิดไว้ให้คอลเลกชัน
+  { id: 'fish', move: 'swim', habitat: 'water', active: 'always', count: 0, speed: 2.5, flee: 5, aggro: 0, ink: 'flee', height: 0, size: 1 },
   { id: 'frog', move: 'hop', habitat: 'shore', active: 'always', count: 4, speed: 3, flee: 3, aggro: 0, ink: 'ignore', height: 0.12, size: 1 },
   { id: 'butterfly', move: 'flutter', habitat: 'meadow', active: 'day', count: 10, speed: 1.5, flee: 0, aggro: 0, ink: 'ignore', height: 0, size: 1 },
   { id: 'firefly', move: 'glow', habitat: 'meadow', active: 'night', count: 40, speed: 0.6, flee: 0, aggro: 0, ink: 'ignore', height: 0, size: 1 },

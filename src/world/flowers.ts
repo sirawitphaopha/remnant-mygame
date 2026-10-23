@@ -1,5 +1,6 @@
 import { WORLD } from '../config/game';
-import { distToRoads, ROAD_WIDTH } from './layout';
+import { RIVER_WIDTH, distToRoads, ROAD_WIDTH } from './layout';
+import { riverDistance } from './water';
 import { Simplex2, hash2 } from './noise';
 import { BIOME, type BiomeId } from './terrainGen';
 import type { Terrain } from './Terrain';
@@ -13,14 +14,21 @@ export type FlowerId =
 
 export const FLOWER_IDS: FlowerId[] = ['poppy', 'lupin', 'sunflower', 'daisy', 'cornflower', 'lavender', 'foxglove', 'bluebell', 'dogRose', 'dandelion', 'buttercup', 'orchid', 'waterLily'];
 
+/** พืชริมน้ำกับหินท้องน้ำ (ช่วง 6) วาดแบบเดียวกับดอกไม้ · ธูปฤาษี อ้อ หญ้าหางม้า ตามแหล่งอ้างอิงหัวข้อ 3 */
+export type RiverPlantId = 'cattail' | 'reed' | 'horsetail' | 'stone';
+export const RIVER_PLANT_IDS: RiverPlantId[] = ['cattail', 'reed', 'horsetail', 'stone'];
+export type TilePlantId = FlowerId | RiverPlantId;
+
 /** ความสูงในเกม (เมตร) · ทานตะวันในแหล่งอ้างอิงราว 3 ม. ในเกมใช้ 1.8 ถึง 2.6 ไม่ให้บังทุ่งทั้งหมด (แคลร์ตัดสินเอง) */
 export const FLOWER_HEIGHT: Record<FlowerId, [number, number]> = {
   poppy: [0.4, 0.7], lupin: [0.6, 1.0], sunflower: [1.8, 2.6], daisy: [0.15, 0.3], cornflower: [0.4, 0.7],
   lavender: [0.4, 0.6], foxglove: [0.9, 1.5], bluebell: [0.2, 0.4], dogRose: [0.9, 1.6], dandelion: [0.12, 0.25],
   buttercup: [0.2, 0.4], orchid: [0.3, 0.5], waterLily: [0.05, 0.1],
 };
+/** ธูปฤาษี 0.8 ถึง 2.4 · อ้อในเกม 1.5 ถึง 3 (แหล่งอ้างอิงถึง 4) · หญ้าหางม้า 0.3 ถึง 0.9 · หิน = ขนาด */
+export const RIVER_PLANT_SIZE: Record<RiverPlantId, [number, number]> = { cattail: [0.8, 2.4], reed: [1.5, 3], horsetail: [0.3, 0.9], stone: [0.15, 0.5] };
 
-export interface FlowerSpot { kind: FlowerId; x: number; y: number; z: number; rot: number; scale: number }
+export interface FlowerSpot { kind: TilePlantId; x: number; y: number; z: number; rot: number; scale: number }
 
 const patchNoise = new Simplex2(WORLD.seed + 515);
 /** ดงดอกไม้ในทุ่งดอกไม้ (ดงละชนิด) */
@@ -60,9 +68,27 @@ export function flowersInTile(t: Terrain, x0: number, z0: number, size: number, 
     for (let i = i0; i < i0 + n; i++) {
       const x = (i + 0.15 + 0.7 * hash2(i, j, 61)) * step;
       const z = (j + 0.15 + 0.7 * hash2(i, j, 62)) * step;
+      const h = t.heightAt(x, z);
+      // ริมน้ำ: ธูปฤาษีกับอ้อขึ้นในน้ำตื้น หญ้าหางม้าบนตลิ่ง หินกลมท้องน้ำ · น้ำนิ่งมีบัวสาย
+      const wl = WORLD.waterLevel;
+      if (h < wl + 1.1 && h > wl - 1.7) {
+        const r = hash2(i, j, 63);
+        const dv = riverDistance(x, z);
+        const still = dv > RIVER_WIDTH + 30;
+        let kind: TilePlantId | null = null;
+        if (h < wl - 0.35) kind = still && r < 0.16 ? 'waterLily' : null;
+        else if (h < wl + 0.05) kind = r < 0.42 ? (hash2(i, j, 64) < 0.55 ? 'cattail' : 'reed') : null;
+        else if (r < 0.2) kind = 'horsetail';
+        else if (!still && r < 0.3) kind = 'stone';
+        if (kind) {
+          const [a, b] = kind === 'waterLily' ? FLOWER_HEIGHT.waterLily : RIVER_PLANT_SIZE[kind as RiverPlantId] ?? FLOWER_HEIGHT[kind as FlowerId];
+          out.push({ kind, x, y: kind === 'waterLily' ? wl : h, z, rot: hash2(i, j, 65) * Math.PI * 2, scale: a + (b - a) * hash2(i, j, 66) });
+          continue;
+        }
+        if (h < wl + 0.3) continue;
+      }
       const kind = flowerAt(t, x, z, hash2(i, j, 63), hash2(i, j, 64));
       if (!kind || kind === 'waterLily') continue;
-      const h = t.heightAt(x, z);
       if (h < WORLD.waterLevel + 0.3 || t.slopeAt(x, z) > 0.4 || distToRoads(x, z) < ROAD_WIDTH + 0.5) continue;
       const [a, b] = FLOWER_HEIGHT[kind];
       // ทานตะวันดอกแก่หันทิศตะวันออก (REFERENCES-R2 หัวข้อ 4) · ชนิดอื่นหันสุ่ม

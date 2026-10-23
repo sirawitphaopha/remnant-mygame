@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { FlowerId } from '../../world/flowers';
+import type { TilePlantId } from '../../world/flowers';
+import { jitter } from './build';
 import { assemble, type Part } from './build';
 
 // ดอกไม้ 13 ชนิด ปั้นด้วยโค้ด · ทุกชนิดปั้นสูง 1 ม. โคนอยู่ที่ y = 0 แล้วย่อขยายตามความสูงจริงตอนวาง
@@ -30,7 +31,7 @@ function petals(n: number, len: number, wid: number, y: number, tilt: number, x 
 
 const leaf = (y: number, a: number, len = 0.14) => new THREE.PlaneGeometry(0.05, len).translate(0, len / 2, 0).rotateX(-0.9).rotateY(a).translate(0, y, 0);
 
-export function flowerGeometry(kind: FlowerId): THREE.BufferGeometry {
+export function flowerGeometry(kind: TilePlantId): THREE.BufferGeometry {
   const p: Part[] = [];
   const add = (geo: THREE.BufferGeometry | THREE.BufferGeometry[], color: number, sway: [number, number] = [0.6, 1], vary = 0.12) => {
     for (const g of Array.isArray(geo) ? geo : [geo]) p.push({ geo: g, color, vary, sway });
@@ -109,6 +110,36 @@ export function flowerGeometry(kind: FlowerId): THREE.BufferGeometry {
       add(stem(0.9, 0.01, 0.35), 0x4a6a3a, [0, 1]);
       for (let i = 0; i < 4; i++) add(petals(5, 0.07, 0.06, 0, 1.4).map((g) => g.rotateX(Math.PI / 2).translate(0.12 + i * 0.06, 0.85 - i * 0.07, 0)), i % 2 ? 0xf0e8f4 : 0xe0a0d0, [0.6, 1]);
       for (let i = 0; i < 3; i++) add(new THREE.PlaneGeometry(0.1, 0.4).translate(0, 0.2, 0).rotateX(-1.1).rotateY(i * 2.1), 0x3a6a2a, [0, 0.2]);
+      break;
+    case 'cattail':
+      // ธูปฤาษี ใบยาวแบนตั้งตรง ช่อดอกสีน้ำตาลรูปไส้กรอก
+      for (let i = 0; i < 6; i++) add(new THREE.PlaneGeometry(0.03, 0.9).translate(0, 0.45, 0).rotateX(0.06 * (i % 3)).rotateY(i * 1.05), 0x5a7a34, [0, 1]);
+      add(stem(0.95, 0.008), 0x6a7a3a, [0, 1]);
+      add(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 6).translate(0, 0.84, 0), 0x5a3a20, [0.8, 1]);
+      break;
+    case 'reed':
+      // อ้อ ลำสูงใบเรียวกับช่อดอกฟูที่ยอด
+      for (let s = 0; s < 4; s++) {
+        const a = s * 1.6;
+        add(stem(0.98, 0.006, 0.06).rotateY(a), 0x8a9a52, [0, 1]);
+        add(new THREE.PlaneGeometry(0.04, 0.12).translate(0, 0.06, 0).rotateY(a).translate(Math.cos(-a) * 0.05, 0.93, Math.sin(-a) * 0.05), 0xb8a888, [0.9, 1]);
+        for (let k = 0; k < 3; k++) add(new THREE.PlaneGeometry(0.02, 0.22).translate(0, 0.11, 0).rotateZ(0.7).rotateY(a + k * 2).translate(0, 0.3 + k * 0.2, 0), 0x7a8a42, [0.3, 0.8]);
+      }
+      break;
+    case 'horsetail':
+      // หญ้าหางม้า ลำตั้งมีกิ่งเส้นเล็กเป็นวงทุกข้อ
+      for (let s = 0; s < 5; s++) {
+        const a = s * 1.25;
+        const ox = Math.cos(a) * 0.06;
+        const oz = Math.sin(a) * 0.06;
+        add(stem(0.95, 0.007).translate(ox, 0, oz), 0x4e7a34, [0, 1]);
+        for (let k = 0; k < 5; k++) add(new THREE.PlaneGeometry(0.008, 0.09).translate(0, 0.045, 0).rotateZ(1.0).rotateY(k * 1.3 + a).translate(ox, 0.25 + k * 0.13, oz), 0x5e8a3a, [0.4, 0.9]);
+      }
+      break;
+    case 'stone':
+      // หินกลมท้องน้ำ (ขนาดตาม scale เป็นเมตร) มีตะไคร่ด้านบน
+      add(jitter(new THREE.IcosahedronGeometry(0.5, 1).scale(1.3, 0.55, 1), 0.08, 2, 3).translate(0, 0.18, 0), 0x6a665e, [0, 0], 0.18);
+      add(jitter(new THREE.SphereGeometry(0.48, 7, 3, 0, Math.PI * 2, 0, 0.7).scale(1.25, 0.5, 0.95), 0.05, 2, 5).translate(0, 0.2, 0), 0x4f6430, [0, 0], 0.2);
       break;
     case 'waterLily':
       add(new THREE.CircleGeometry(4, 14, 0.3, Math.PI * 1.85).rotateX(-Math.PI / 2), 0x3a6a2a, [0.1, 0.1]);

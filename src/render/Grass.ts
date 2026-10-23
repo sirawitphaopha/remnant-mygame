@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { QualityPreset } from '../config/quality';
-import { FLOWER_IDS, flowersInTile, grassHeightAt, type FlowerId, type FlowerSpot } from '../world/flowers';
+import { FLOWER_IDS, RIVER_PLANT_IDS, flowersInTile, grassHeightAt, type FlowerSpot, type TilePlantId } from '../world/flowers';
 import { hash2 } from '../world/noise';
 import { grassDensity } from '../world/scatter';
 import type { Terrain } from '../world/Terrain';
@@ -117,7 +117,7 @@ export class Grass {
   get mesh(): THREE.Group { return this.group; }
   private tiles = new Map<string, GrassTile>();
   private grassGeo = clumpGeometry();
-  private flowerGeos = new Map<FlowerId, THREE.BufferGeometry>();
+  private flowerGeos = new Map<TilePlantId, THREE.BufferGeometry>();
   private grassMat: THREE.MeshLambertMaterial;
   private flowerMat: THREE.MeshLambertMaterial;
   private far = { value: 40 };
@@ -127,7 +127,7 @@ export class Grass {
     grassWind(this.grassMat, 0.5, this.far);
     this.flowerMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
     grassWind(this.flowerMat, 0.3, this.far);
-    for (const id of FLOWER_IDS) this.flowerGeos.set(id, flowerGeometry(id));
+    for (const id of [...FLOWER_IDS, ...RIVER_PLANT_IDS]) this.flowerGeos.set(id, flowerGeometry(id));
     this.setQuality(q);
   }
 
@@ -235,7 +235,7 @@ export class Grass {
     }
     // ดอกไม้ แยกชุดตามชนิด
     const spots = flowersInTile(this.terrain, x0, z0, TILE).filter((f) => !this.blocked(f.x, f.z));
-    const byKind = new Map<FlowerId, FlowerSpot[]>();
+    const byKind = new Map<TilePlantId, FlowerSpot[]>();
     for (const f of spots) { let l = byKind.get(f.kind); if (!l) byKind.set(f.kind, (l = [])); l.push(f); }
     const flowers: THREE.InstancedMesh[] = [];
     for (const [kind, list] of byKind) {

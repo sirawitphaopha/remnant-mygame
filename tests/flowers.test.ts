@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { flowerGeometry } from '../src/render/models/flowers';
-import { FLOWER_IDS, flowersInTile, grassHeightAt, type FlowerId } from '../src/world/flowers';
+import { FLOWER_IDS, flowersInTile, grassHeightAt, type TilePlantId } from '../src/world/flowers';
 import { REGIONS } from '../src/world/layout';
 import { Terrain } from '../src/world/Terrain';
 import { BIOME } from '../src/world/terrainGen';
@@ -15,7 +15,7 @@ describe('ดอกไม้กับหญ้าสูง', () => {
   });
   it('ทุ่งดอกไม้ขึ้นเป็นดงหนาแน่น ดงละชนิด และพบหลายชนิดทั่วทุ่ง', () => {
     const r = REGIONS.flowers;
-    const kinds = new Set<FlowerId>();
+    const kinds = new Set<TilePlantId>();
     let total = 0;
     let mono = 0;
     let tiles = 0;
@@ -26,7 +26,7 @@ describe('ดอกไม้กับหญ้าสูง', () => {
         if (spots.length < 40) continue;
         tiles++;
         total += spots.length;
-        const c = new Map<FlowerId, number>();
+        const c = new Map<TilePlantId, number>();
         for (const s of spots) { kinds.add(s.kind); c.set(s.kind, (c.get(s.kind) ?? 0) + 1); }
         if (Math.max(...c.values()) / spots.length > 0.7) mono++;
       }

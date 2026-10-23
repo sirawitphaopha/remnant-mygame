@@ -43,6 +43,12 @@ import { Structures } from '../world/structures';
 import { buildCaves, caveAt, type Cave } from '../world/caves';
 import { buildTown, type TownLayout } from '../world/town';
 import { Town } from '../render/Town';
+import { Fish } from '../render/Fish';
+import { Waterfall } from '../render/Waterfall';
+import { flowField, waterfallSpot } from '../world/water';
+
+/** ความละเอียดแผนที่ทิศน้ำไหล (ช่องต่อด้าน) */
+const FLOW_N = 192;
 import { Caves } from '../render/Caves';
 import { WorldGround } from './WorldGround';
 import { disposeObject } from '../render/dispose';
@@ -51,7 +57,7 @@ import { NatureAudio, type Surface } from '../audio/NatureAudio';
 import { clearSave, readOldSave, readSave, readSettings, storedSavedAt, writeSave, writeSettings, SAVE_VERSION, type SaveData, type Settings } from '../storage/save';
 import { SettingsScreen, TitleScreen } from '../ui/Menus';
 import { forestDensity } from '../world/scatter';
-import { grassHeightAt } from '../world/flowers';
+import { FLOWER_IDS, grassHeightAt } from '../world/flowers';
 import { scanKindOf, trunkRadius } from '../world/trees';
 import { LAKE, RIVER, RIVER_WIDTH, ROAD, ROAD_WIDTH, TOWN, distToPolyline } from '../world/layout';
 
@@ -70,6 +76,8 @@ export class App {
   readonly water: Water;
   readonly vegetation: Vegetation;
   readonly grass: Grass;
+  readonly fish: Fish;
+  readonly waterfall: Waterfall;
   readonly player: Player;
   readonly rig: CameraRig;
   readonly sun: THREE.DirectionalLight;
@@ -194,11 +202,26 @@ export class App {
 
     this.terrainMesh = new TerrainMesh(this.terrain);
     this.scene.add(this.terrainMesh.group);
-    this.water = new Water();
+    // ตีนน้ำตกเป็นแอ่งโล่ง ต้นไม้ไม่ขึ้นบัง (ใช้ตอนวางป่าข้างล่าง)
+    const fallSpot = waterfallSpot(this.terrain);
+    // ผิวน้ำไหลตามทิศแม่น้ำ · ฝูงปลา แมลงปอ · น้ำตกในหุบป่าดิบชื้น
+    const flow = flowField(FLOW_N);
+    this.water = new Water(flow, FLOW_N);
+    this.fish = new Fish(this.terrain);
+    this.fish.flowAt = (x, z) => {
+      const i = Math.max(0, Math.min(FLOW_N - 1, Math.floor(((x + WORLD.half) / WORLD.size) * FLOW_N)));
+      const j = Math.max(0, Math.min(FLOW_N - 1, Math.floor(((z + WORLD.half) / WORLD.size) * FLOW_N)));
+      return [flow[(j * FLOW_N + i) * 3], flow[(j * FLOW_N + i) * 3 + 1]];
+    };
+    this.scene.add(this.fish.group);
+    this.waterfall = new Waterfall(fallSpot);
+    this.scene.add(this.waterfall.group);
     this.scene.add(this.water.mesh);
     // เมืองวางก่อนป่า ต้นไม้กับขอนไม้จะไม่ขึ้นในตึก (เดิมต้นไม้ 7 ต้นขึ้นในตึก ลำต้นทะลุหลังคา)
     this.town = buildTown(this.terrain, this.structures);
-    const inBuilding = (x: number, z: number) => this.town.buildings.some((b) => Math.abs(x - b.x) < b.w / 2 + 6 && Math.abs(z - b.z) < b.d / 2 + 6 && Math.hypot(x - b.x, z - b.z) < Math.hypot(b.w, b.d) / 2 + 2);
+    const inBuilding = (x: number, z: number) =>
+      Math.hypot(x - fallSpot.x, z - fallSpot.z) < 18 ||
+      this.town.buildings.some((b) => Math.abs(x - b.x) < b.w / 2 + 6 && Math.abs(z - b.z) < b.d / 2 + 6 && Math.hypot(x - b.x, z - b.z) < Math.hypot(b.w, b.d) / 2 + 2);
     this.vegetation = new Vegetation(this.terrain, this.q, inBuilding);
     this.scene.add(this.vegetation.group);
     this.grass = new Grass(this.terrain, this.terrainMesh, this.q, inBuilding);
@@ -609,6 +632,7 @@ export class App {
     this.audio.update(dt, {
       night: this.sky.night,
       forest: forestDensity(this.terrain, p.x, p.z),
+      fall: Math.max(0, 1 - Math.hypot(p.x - this.waterfall.spot.x, p.z - this.waterfall.spot.z) / 70),
       field: Math.min(1, Math.max(0, (grassHeightAt(this.terrain, p.x, p.z, 0.5) - 0.3) / 0.7)),
       waterDist: Math.max(0, waterDist),
       cave: this.caveDepth,
@@ -710,8 +734,9 @@ export class App {
       test(pp.prop.key, pp.prop.kind, pp.prop.x, pp.y + (H[pp.prop.kind] ?? 0.12), pp.prop.z);
     }
     for (const c of this.corpses) if (Math.abs(c.x - p.x) < 30 && Math.abs(c.z - p.z) < 30) test(c.key, 'remains', c.x, c.y + 0.3, c.z);
+    for (const f of this.fish.targets(p.x, p.z, 25)) test(f.key, 'fish', f.x, f.y, f.z);
     // ดอกไม้ เฟิร์น เห็ด สแกนได้ (เดิมอยู่ในคอลเลกชันแต่ไม่มีทางสแกน หมวดพืชไม่มีวันครบ) · ช่วง 12 แยกข้อความสแกนดอกไม้ทีละชนิด
-    for (const f of this.grass.flowersNear(p.x, p.z, 14)) test(`flower-${f.kind}@${Math.round(f.x * 2)},${Math.round(f.z * 2)}`, 'flower', f.x, f.y + f.scale * 0.8, f.z);
+    for (const f of this.grass.flowersNear(p.x, p.z, 14)) if ((FLOWER_IDS as string[]).includes(f.kind)) test(`flower-${f.kind}@${Math.round(f.x * 2)},${Math.round(f.z * 2)}`, 'flower', f.x, f.y + f.scale * 0.8, f.z);
     for (const kind of ['fern', 'mushroom', 'flower'] as const) {
       for (const pl of this.vegetation.plantsNow[kind]) if (Math.abs(pl.x - p.x) < 14 && Math.abs(pl.z - p.z) < 14) test(`${kind}@${Math.round(pl.x * 2)},${Math.round(pl.z * 2)}`, kind, pl.x, pl.y + 0.3 * pl.scale, pl.z);
     }
@@ -1064,6 +1089,8 @@ export class App {
     this.hemi.intensity *= dim;
     this.cavesView.update(this.elapsed);
     this.animals.update(dt, p.x, p.y, p.z, this.sky.night > 0.5, this.elapsed);
+    this.fish.update(dt, this.elapsed, p.x, p.z, this.sky.night < 0.5);
+    this.waterfall.update(dt, 0.15 + 0.85 * this.sky.brightness);
     this.updateAudio(dt);
     // แสงแดดหรือแสงจันทร์กับเงาตามผู้เล่น ขยับเป็นขั้น กันเงาสั่น
     const snap = 4;

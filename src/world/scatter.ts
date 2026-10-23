@@ -1,5 +1,5 @@
 import { WORLD } from '../config/game';
-import { CAVES, REGIONS, RIVER, ROAD_WIDTH, SHIP, distToPolyline, distToRoads } from './layout';
+import { CAVES, REGIONS, RIVER, RIVER_WIDTH, ROAD_WIDTH, SHIP, distToPolyline, distToRoads } from './layout';
 import { BIOME, type BiomeId } from './terrainGen';
 import { ALL_TREE_KINDS, ORCHARD_ROWS, SPECIES_BY_ID, deadKindOf, pickSpecies, type TreeKind } from './trees';
 import { Simplex2, hash2 } from './noise';
@@ -147,6 +147,23 @@ export function scatterDebris(t: Terrain, blocked: (x: number, z: number) => boo
       const r = hash2(i, j, 54);
       const kind: DebrisKind = r < 0.55 ? 'log' : r < 0.85 ? 'stump' : 'uprooted';
       out[kind].push({ x, y: t.heightAt(x, z), z, rot: hash2(i, j, 55) * Math.PI * 2, scale: 0.7 + 0.6 * hash2(i, j, 56) });
+    }
+  }
+  // ขอนไม้ขวางน้ำ: ล้มจากตลิ่งยื่นลงแม่น้ำ ช่วงที่ไหลผ่านป่า
+  for (let k = 1; k < RIVER.length - 1; k++) {
+    const a = RIVER[k];
+    const b = RIVER[k + 1];
+    for (const f of [0.3, 0.7]) {
+      const x0 = a.x + (b.x - a.x) * f;
+      const z0 = a.z + (b.z - a.z) * f;
+      const dl = Math.hypot(b.x - a.x, b.z - a.z);
+      const nx = -(b.z - a.z) / dl;
+      const nz = (b.x - a.x) / dl;
+      const side = hash2(k, Math.round(f * 10), 57) < 0.5 ? -1 : 1;
+      const x = x0 + nx * side * (RIVER_WIDTH * 0.55 + 3);
+      const z = z0 + nz * side * (RIVER_WIDTH * 0.55 + 3);
+      if (forestDensity(t, x + nx * side * 8, z + nz * side * 8) < 0.4) continue;
+      out.log.push({ x, y: t.heightAt(x, z), z, rot: Math.atan2(-nz, nx), scale: 1.2 });
     }
   }
   return out;
