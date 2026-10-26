@@ -93,6 +93,12 @@ export class HeroModel {
   readonly torso = new THREE.Group();
   readonly head = new THREE.Group();
   readonly octo: THREE.Group;
+  /** ของที่ปลาหมึกหันไปมอง (ตอนสแกน) · null = มองไปข้างหน้า */
+  lookTarget: { x: number; y: number; z: number } | null = null;
+  /** มุมเงยของกล้อง (เรเดียน บวก = เงย) แขนที่ยกใช้อุปกรณ์เงยก้มตาม */
+  aimPitch = 0;
+  private octoYaw = 0;
+  private tmpLook = new THREE.Vector3();
   readonly jarGlass: THREE.Mesh;
   readonly jarWater: THREE.Mesh;
   readonly chestLight: THREE.Mesh;
@@ -290,8 +296,9 @@ export class HeroModel {
       this.arms.forEach((a, i) => {
         const opp = i % 2 ? s : -s;
         const swing = opp * (a.lower ? 0.25 : 0.5) * amt;
-        set(a.shoulder, swing + (a.lower ? -0.12 : 0), a.side * (a.lower ? 0.38 : 0.14), 0);
-        set(a.elbow, -0.25 - (running ? 0.9 : 0.2) * amt);
+        // ข้อศอกงอมาข้างหน้าแบบคนวิ่งจริง ค่าบวก = ปลายแขนไปข้างหน้า (เดิมติดลบ ปลายแขนพับไปข้างหลัง พี่กันทักว่าวิ่งแล้วมือไปข้างหลัง 26 ต.ค. 2569)
+        set(a.shoulder, swing + (a.lower ? -0.12 : 0) + (running ? 0.18 : 0), a.side * (a.lower ? 0.38 : 0.14), 0);
+        set(a.elbow, 0.2 + (running ? 1.2 : 0.15) * amt);
       });
       bodyPitch = running ? -0.18 : -0.04 * amt;
       bodyY = 0.98 + Math.abs(c) * 0.035 * amt;
@@ -302,7 +309,9 @@ export class HeroModel {
       this.raised[i] += ((canRaise ? this.raise[i] : 0) - this.raised[i]) * Math.min(1, dt * 8);
       const w = this.raised[i];
       if (w < 0.01) return;
-      a.shoulder.rotation.x += ((a.lower ? 1.25 : 1.42) - a.shoulder.rotation.x) * w;
+      // เงยก้มตามกล้อง (เดิมยกระดับเดียว เล็งสูงต่ำแขนไม่ตาม)
+      const pitch = Math.max(-0.7, Math.min(0.9, this.aimPitch));
+      a.shoulder.rotation.x += ((a.lower ? 1.25 : 1.42) + pitch - a.shoulder.rotation.x) * w;
       a.shoulder.rotation.z += (a.side * 0.08 - a.shoulder.rotation.z) * w;
       a.elbow.rotation.x += (0.1 - a.elbow.rotation.x) * w;
     });
@@ -317,7 +326,15 @@ export class HeroModel {
     this.torso.scale.y = 1 + Math.sin(this.breath * 1.6) * 0.012;
     // ปลาหมึกลอยขึ้นลงในน้ำเบา ๆ
     this.octo.position.y = 0.2 + Math.sin(time * 1.4) * 0.012;
-    this.octo.rotation.y = Math.sin(time * 0.5) * 0.4;
+    // ปลาหมึกหันหน้าไปข้างหน้า (ตาอยู่ด้าน -Z ของตัว) ส่ายมองซ้ายขวาเบา ๆ · ตอนสแกนหันไปมองของ
+    // เดิมใช้ lookAt ซึ่งหันด้าน +Z (ด้านหลังหัว) ไปหาของ ตาจึงหันมาทางกล้อง และค้างท่านั้นหลังสแกนครั้งแรก (พี่กันทัก 26 ต.ค. 2569)
+    let lookYaw = Math.sin(time * 0.5) * 0.4;
+    if (this.lookTarget) {
+      const l = this.head.worldToLocal(this.tmpLook.set(this.lookTarget.x, this.lookTarget.y, this.lookTarget.z));
+      lookYaw = Math.max(-1.1, Math.min(1.1, Math.atan2(-l.x, -l.z)));
+    }
+    this.octoYaw += (lookYaw - this.octoYaw) * Math.min(1, dt * 6);
+    this.octo.rotation.set(0, this.octoYaw, 0);
   }
 }
 

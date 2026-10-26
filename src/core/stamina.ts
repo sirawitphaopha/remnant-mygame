@@ -56,12 +56,17 @@ export function stepStamina(s: StaminaState, dt: number, act: Activity, grade: n
   clamp(s);
 }
 
-export function spendJump(s: StaminaState, loadRatio: number): boolean {
-  if (s.exhausted || s.value < 3) return false;
+/**
+ * กระโดดหนึ่งครั้ง · คืนแรงส่ง (1 = กระโดดเต็มที่)
+ * แรงหมดก็ยังกระโดดได้ แค่เตี้ยลงและไม่กินแรงเพิ่ม (เดิมแรงหมดแล้วกดกระโดดไม่เกิดอะไรเลย
+ * วิ่งราว 14 วินาทีแรงก็หมด พี่กันทักว่าวิ่งแล้วกระโดดไม่ได้ 26 ต.ค. 2569)
+ */
+export function spendJump(s: StaminaState, loadRatio: number): number {
+  if (s.exhausted || s.value < 3) return 0.8;
   s.value -= STAMINA.jump * (1 + Math.max(0, loadRatio) * 0.9);
   s.sinceUse = 0;
   clamp(s);
-  return true;
+  return 1;
 }
 
 function clamp(s: StaminaState): void {

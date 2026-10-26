@@ -22,6 +22,8 @@ export interface ScanResult {
   newTruth: boolean;
   /** เพิ่งปลดล็อกบันทึกส่วนตัว */
   newLog: boolean;
+  /** ชิ้นนี้เพิ่งสแกนครั้งแรก (ชิ้นที่เคยสแกนแล้ว สแกนซ้ำไม่นับเพิ่ม ไม่เด้งข้อความ) */
+  newObject: boolean;
   count: number;
 }
 
@@ -58,14 +60,15 @@ export class ScanLog {
     const r = this.rec(kindId);
     const need = this.needFor(kindId);
     const hadTruth = r.seen.length >= need;
-    if (!r.seen.includes(key)) r.seen.push(key);
+    const newObject = !r.seen.includes(key);
+    if (newObject) r.seen.push(key);
     const newTruth = !hadTruth && r.seen.length >= need;
     let newLog = false;
     if (special && !r.log && kind(kindId)?.log) {
       r.log = true;
       newLog = true;
     }
-    return { kindId, firstTime, newTruth, newLog, count: r.seen.length };
+    return { kindId, firstTime, newTruth, newLog, newObject, count: r.seen.length };
   }
 
   /** สแกนแล้วหรือยัง */

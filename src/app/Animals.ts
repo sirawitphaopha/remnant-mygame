@@ -818,9 +818,13 @@ export class Animals {
   // ================= สแกน หมึก ตัวช่วยทดสอบ =================
 
   /** สัตว์กับซากที่สแกนได้ (ซากสแกนได้เป็นชนิดของสัตว์ตัวนั้น) */
-  scanTargets(): { key: string; kind: string; x: number; y: number; z: number }[] {
-    const out = this.list.filter((a) => a.hidden <= 0).map((a) => ({ key: `animal-${this.tag}-${a.id}`, kind: a.s.id, x: a.x, y: a.y + Math.max(0.15, a.s.height * (a.pose === 'rest' ? 0.5 : 1)), z: a.z }));
-    for (const c of this.carcasses) out.push({ key: c.key, kind: c.s.id, x: c.x, y: c.y + 0.3, z: c.z });
+  /** สัตว์ที่สแกนได้ · y = กลางลำตัว r = รัศมีทรงกลมครอบตัว (เส้นเล็งกลางจอต้องชนทรงนี้ถึงจะเลือก) */
+  scanTargets(): { key: string; kind: string; x: number; y: number; z: number; r: number }[] {
+    const out = this.list.filter((a) => a.hidden <= 0).map((a) => {
+      const h = a.s.height * (a.pose === 'rest' ? 0.5 : 1);
+      return { key: `animal-${this.tag}-${a.id}`, kind: a.s.id, x: a.x, y: a.y + Math.max(0.15, h * 0.6), z: a.z, r: Math.max(0.3, a.s.radius * 1.6, h * 0.6) };
+    });
+    for (const c of this.carcasses) out.push({ key: c.key, kind: c.s.id, x: c.x, y: c.y + 0.3, z: c.z, r: 0.7 });
     return out;
   }
 

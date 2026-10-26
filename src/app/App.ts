@@ -11,6 +11,7 @@ import { HeroModel } from '../render/models/hero';
 import { Sky } from '../render/Sky';
 import { Grass } from '../render/Grass';
 import { TerrainMesh } from '../render/TerrainMesh';
+import { Cliffs } from '../render/Cliffs';
 import { Vegetation } from '../render/Vegetation';
 import { Water } from '../render/Water';
 import { WIND } from '../render/wind';
@@ -24,7 +25,8 @@ import { Hud, type MapMarker } from '../ui/Hud';
 import { BigMap } from '../ui/BigMap';
 import { MapImage } from '../ui/MapImage';
 import { beltViews } from './hudView';
-import { Tools, type ScanTarget } from './Tools';
+import { Tools, type Box6, type ScanTarget } from './Tools';
+import { ScanBeam } from '../render/ScanBeam';
 import { setLang, t, tf } from '../ui/strings';
 import { kind as kindOf } from '../core/catalog';
 import { ScanLog } from '../core/scanlog';
@@ -46,7 +48,7 @@ import { SHRUB_IDS } from '../world/shrubs';
 import { planRuins } from '../world/ruins';
 import { applyDetail } from '../render/detail';
 import { buildTown, buildingAt, grassBlocked, treeBlocked, type Building, type TownLayout } from '../world/town';
-import { Town } from '../render/Town';
+import { Town, bridgePreview, buildingPreview } from '../render/Town';
 import { Fish } from '../render/Fish';
 import { Rain, ValleyFog } from '../render/Rain';
 import { WET } from '../render/TerrainMesh';
@@ -86,6 +88,8 @@ export class App {
   readonly input: Input;
   readonly terrain: Terrain;
   readonly terrainMesh: TerrainMesh;
+  /** ผนังหินของภูเขายอดตัด ปั้นเฉพาะลูกที่อยู่ใกล้ */
+  readonly cliffs: Cliffs;
   readonly water: Water;
   readonly vegetation: Vegetation;
   readonly grass: Grass;
@@ -112,6 +116,11 @@ export class App {
   quality: QualityLevel = DEFAULT_QUALITY;
   private q: QualityPreset = QUALITY[DEFAULT_QUALITY];
   readonly hero = new HeroModel();
+  /** ลำแสงจากเครื่องสแกนไปถึงของที่สแกน */
+  readonly scanBeam = new ScanBeam();
+  private beamFrom = new THREE.Vector3();
+  private beamTo = new THREE.Vector3();
+  private boxCorner = new THREE.Vector3();
   readonly colliders = new CircleColliders();
   /** ต้นไม้กับหินในตารางช่อง หาของใกล้ตัวเร็ว (เป้าสแกน กระรอก หมี) */
   readonly treeGrid = new PointGrid<TreePoint>(32);
@@ -231,6 +240,8 @@ export class App {
 
     this.terrainMesh = new TerrainMesh(this.terrain);
     this.scene.add(this.terrainMesh.group);
+    this.cliffs = new Cliffs(this.terrain);
+    this.scene.add(this.cliffs.group);
     // ตีนน้ำตกเป็นแอ่งโล่ง ต้นไม้ไม่ขึ้นบัง (ใช้ตอนวางป่าข้างล่าง)
     const fallSpot = waterfallSpot(this.terrain);
     // ผิวน้ำไหลตามทิศแม่น้ำ · ฝูงปลา แมลงปอ · น้ำตกในหุบป่าดิบชื้น
@@ -248,6 +259,7 @@ export class App {
     // ฝนรอบกล้อง หมอกเช้าในหุบ หยดน้ำบนโหล
     this.rain = new Rain((x, z) => this.terrain.heightAt(x, z));
     this.scene.add(this.rain.group);
+    this.scene.add(this.scanBeam.group);
     this.valleyFog = new ValleyFog(WORLD.size);
     this.scene.add(this.valleyFog.group);
     this.jarDrops = jarDropsMesh();
@@ -305,6 +317,10 @@ export class App {
 
     this.townView = new Town(this.town.buildings, this.town.parts, this.town.bridge, this.town.extras);
     this.scene.add(this.townView.group);
+    // ตึกกับสะพานในคอลเลกชันใช้ข้อมูลเมืองจริง
+    this.setViewerBuilding();
+    const bridge = this.town.bridge;
+    if (bridge.length) this.viewer.setSource('bridge', () => bridgePreview(bridge));
     this.cavesView = new Caves(this.caves);
     this.scene.add(this.cavesView.group);
     this.cavesView.cutTerrain(this.terrainMesh.material);
@@ -507,6 +523,7 @@ export class App {
       this.camera.position.set(cx + Math.cos(this.titleOrbit) * 30, this.terrain.heightAt(cx, cz) + 9, cz + Math.sin(this.titleOrbit) * 30);
       this.camera.lookAt(SHIP.x - 60, this.terrain.heightAt(SHIP.x, SHIP.z) + 14, SHIP.z - 120);
       this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
+      this.cliffs.update(this.camera.position.x, this.camera.position.z);
       this.vegetation.update(this.camera.position.x, this.camera.position.z);
       this.grass.update(this.camera.position.x, this.camera.position.z);
     }
@@ -576,6 +593,7 @@ export class App {
     this.live = true;
     // แผ่นพื้นรอบตัวสร้างให้ครบก่อนเห็นภาพแรก (ไม่เห็นพื้นหยาบค่อย ๆ ละเอียด)
     this.terrainMesh.update(this.player.x, this.player.z, true);
+    this.cliffs.update(this.player.x, this.player.z, true);
     this.title.hide();
     this.closeScreens();
     this.hud.root.hidden = false;
@@ -755,12 +773,18 @@ export class App {
     return hit;
   }
 
+  /** ตัวช่วยทดสอบ: วาร์ปไปพิกัดที่ขึ้นบนจอ (X Y ใต้มินิแมพ · Y เหนือบวก = −z ในโค้ด) */
+  goto(X: number, Y: number): void {
+    this.teleport(X, -Y);
+  }
+
   /** ตัวช่วยทดสอบ: วาร์ปไปจุดนั้น */
   teleport(x: number, z: number, heading = this.player.heading): void {
     this.worldGround.contextY = Infinity;
     this.player.place(x, z, heading);
     this.rig.snap(this.player);
     this.terrainMesh.update(x, z, true);
+    this.cliffs.update(x, z, true);
     this.advance(0.1);
   }
 
@@ -782,71 +806,165 @@ export class App {
   }
 
   /**
-   * ของที่สแกนได้ในทิศที่มอง · เลือกชิ้นที่ตรงทิศที่สุด แล้วเช็กว่าไม่มีผนัง ตึก ภูเขา บังอยู่ (รายงานตรวจข้อ 121 132)
-   * ต้นไม้กับหินดูแค่ช่องรอบตัวในตาราง (เดิมวนทั้งแมพทุกเฟรมที่สแกน)
+   * ของที่สแกนได้ใต้จุดเล็งกลางจอ · เลือกของชิ้นแรกที่เส้นเล็งชนจริงตามรูปทรงของมัน (ลำต้นกับพุ่มใบ ตัวสัตว์ ก้อนหิน ตึก)
+   * เดิมเลือกของที่ทิศเอียงจากกลางจอน้อยที่สุด วัดจากจุดเดียวกลางลำต้น ผึ้งที่บินผ่านใกล้กลางจอจึงชนะต้นไม้ที่เล็งอยู่ (พี่กันทัก 26 ต.ค. 2569)
+   * ของที่ถูกผนัง ตึก ภูเขาบัง ข้ามไปดูชิ้นถัดไป (รายงานตรวจข้อ 121 132) · ต้นไม้กับหินดูแค่ช่องรอบตัวในตาราง
    */
   findScanTarget(origin: THREE.Vector3, dir: THREE.Vector3): ScanTarget | null {
     const p = this.player;
     const cand = this.scanCand;
     cand.length = 0;
-    const test = (key: string, kind: string, x: number, y: number, z: number, wall = true) => {
-      const dx = x - origin.x;
-      const dy = y - origin.y;
-      const dz = z - origin.z;
-      const d = Math.hypot(dx, dy, dz);
-      if (d > 28 || d < 0.5) return;
-      const c = (dx * dir.x + dy * dir.y + dz * dir.z) / d;
-      if (c > 0.975) cand.push({ key, kind, x, y, z, c, wall });
+    const MAX = 28;
+    // ขยายขอบตามระยะนิดหน่อย (ราว 0.7 องศา) ของเล็ก ๆ อย่างผึ้งยังเล็งโดนได้ แต่ไม่แย่งของที่เล็งอยู่จริง
+    const PAD = 0.012;
+    /** กล่องครอบของทรงที่เพิ่งเช็ก (ไว้วาดกรอบไฮไลต์รอบของที่เล็ง) */
+    const box: Box6 = [0, 0, 0, 0, 0, 0];
+    /** ระยะตามเส้นเล็งถึงผิวทรงกลม · -1 = ไม่ชน */
+    const sphere = (cx: number, cy: number, cz: number, r: number): number => {
+      box[0] = cx - r; box[1] = cy - r; box[2] = cz - r; box[3] = cx + r; box[4] = cy + r; box[5] = cz + r;
+      const ox = cx - origin.x;
+      const oy = cy - origin.y;
+      const oz = cz - origin.z;
+      const tc = ox * dir.x + oy * dir.y + oz * dir.z;
+      if (tc < 0.3 || tc > MAX + r) return -1;
+      const d2 = ox * ox + oy * oy + oz * oz - tc * tc;
+      const rr = r + tc * PAD;
+      if (d2 > rr * rr) return -1;
+      return Math.max(0.3, tc - Math.sqrt(rr * rr - d2));
     };
-    for (const tr of this.treeGrid.near(p.x, p.z, 30, this.scanTrees)) test(`tree-${tr.kind}@${Math.round(tr.x)},${Math.round(tr.z)}`, scanKindOf(tr.kind), tr.x, tr.y + Math.min(2.5, tr.height * 0.25), tr.z);
-    for (const r of this.rockGrid.near(p.x, p.z, 30, this.scanRocks)) test(`rock@${Math.round(r.x)},${Math.round(r.z)}`, ROCK_SCAN[rockTypeOf(r.variant)], r.x, r.y + 0.4 * r.scale, r.z);
-    const H: Record<string, number> = { car: 0.9, bus: 1.6, lamp: 5, mailbox: 0.8, sign: 2.6 };
-    for (const pp of this.props.all) {
-      if (pp.taken || Math.abs(pp.prop.x - p.x) > 30 || Math.abs(pp.prop.z - p.z) > 30) continue;
-      test(pp.prop.key, pp.prop.kind, pp.prop.x, pp.y + (H[pp.prop.kind] ?? 0.12), pp.prop.z);
+    /** ระยะตามเส้นเล็งถึงผิวทรงกระบอกตั้ง (ลำต้น เสา ตึก) รวมฝาบน · -1 = ไม่ชน */
+    const cyl = (cx: number, cz: number, r: number, y0: number, y1: number): number => {
+      box[0] = cx - r; box[1] = y0; box[2] = cz - r; box[3] = cx + r; box[4] = y1; box[5] = cz + r;
+      const ox = origin.x - cx;
+      const oz = origin.z - cz;
+      const rr = r + Math.hypot(ox, oz) * PAD;
+      let best = -1;
+      const a = dir.x * dir.x + dir.z * dir.z;
+      if (a > 1e-6) {
+        const b = 2 * (ox * dir.x + oz * dir.z);
+        const c = ox * ox + oz * oz - rr * rr;
+        const disc = b * b - 4 * a * c;
+        if (disc >= 0 && c > 0) {
+          const t = (-b - Math.sqrt(disc)) / (2 * a);
+          const y = origin.y + dir.y * t;
+          if (t > 0.3 && t < MAX && y >= y0 && y <= y1) best = t;
+        }
+      }
+      // มองลงมาโดนหลังคาหรือยอดตอ
+      if (best < 0 && Math.abs(dir.y) > 1e-4) {
+        const t = (y1 - origin.y) / dir.y;
+        if (t > 0.3 && t < MAX && (origin.x + dir.x * t - cx) ** 2 + (origin.z + dir.z * t - cz) ** 2 < rr * rr) best = t;
+      }
+      return best;
+    };
+    const add = (key: string, kind: string, t: number, wall = true) => {
+      if (t > 0) cand.push({ key, kind, x: origin.x + dir.x * t, y: origin.y + dir.y * t, z: origin.z + dir.z * t, t, wall, box: [box[0], box[1], box[2], box[3], box[4], box[5]] });
+    };
+    const pick = (a: number, b: number) => (a < 0 ? b : b < 0 ? a : Math.min(a, b));
+    // ต้นไม้: ลำต้นทรงกระบอก กับพุ่มใบทรงกลม (เล็งที่ลำต้นหรือพุ่มใบก็ได้)
+    for (const tr of this.treeGrid.near(p.x, p.z, MAX + 2, this.scanTrees)) {
+      const h = tr.height;
+      const trunk = cyl(tr.x, tr.z, Math.max(0.3, trunkRadius(tr.kind, h) * 1.2), tr.y - 0.3, tr.y + h * 0.65);
+      const crown = tr.kind === 'deadConifer' || tr.kind === 'deadBroad' ? -1 : sphere(tr.x, tr.y + h * 0.72, tr.z, h * 0.2);
+      // กรอบไฮไลต์ครอบเฉพาะส่วนที่เล็งโดน: ลำต้นช่วงล่าง (สูงไม่เกิน 6 ม.) หรือพุ่มใบ
+      // (เดิมครอบทั้งต้นโคนถึงยอด ยืนใกล้ต้นใหญ่แล้วกรอบล้นจอ มุมกรอบไปอยู่ขอบจอ)
+      if (trunk > 0 && (crown < 0 || trunk <= crown)) {
+        const tr0 = Math.max(0.3, trunkRadius(tr.kind, h) * 1.25);
+        box[0] = tr.x - tr0; box[1] = tr.y; box[2] = tr.z - tr0; box[3] = tr.x + tr0; box[4] = tr.y + Math.min(h * 0.5, 6); box[5] = tr.z + tr0;
+      } else if (crown > 0) {
+        const c = h * 0.2;
+        box[0] = tr.x - c; box[1] = tr.y + h * 0.72 - c; box[2] = tr.z - c; box[3] = tr.x + c; box[4] = tr.y + h * 0.72 + c; box[5] = tr.z + c;
+      }
+      add(`tree-${tr.kind}@${Math.round(tr.x)},${Math.round(tr.z)}`, scanKindOf(tr.kind), pick(trunk, crown));
     }
-    for (const c of this.corpses) if (Math.abs(c.x - p.x) < 30 && Math.abs(c.z - p.z) < 30) test(c.key, 'remains', c.x, c.y + 0.3, c.z);
-    for (const f of this.fish.targets(p.x, p.z, 25)) test(f.key, f.kind, f.x, f.y, f.z);
+    // ขอนไม้ล้ม ตอไม้ ต้นล้มทั้งราก: ยังไม่มีข้อความสแกน แต่บังเส้นเล็ง (เดิมเล็งโดนขอนแล้วได้ต้นไม้ข้างหลังขอน)
+    for (const dk of ['log', 'stump', 'uprooted'] as const) {
+      for (const d of this.vegetation.debris[dk]) {
+        if (Math.abs(d.x - p.x) > 30 || Math.abs(d.z - p.z) > 30) continue;
+        const s = d.scale;
+        const fx = Math.cos(d.rot);
+        const fz = -Math.sin(d.rot);
+        let t = -1;
+        if (dk === 'stump') t = cyl(d.x, d.z, 0.5 * s, d.y, d.y + 0.76 * s);
+        else if (dk === 'log') for (const o of [-2.8, -1.9, -0.95, 0, 0.95, 1.9, 2.8]) t = pick(t, sphere(d.x + fx * o * s, d.y + 0.4 * s, d.z + fz * o * s, 0.45 * s));
+        else {
+          t = sphere(d.x - fx * 0.3 * s, d.y + 1.2 * s, d.z - fz * 0.3 * s, 1.3 * s);
+          for (const o of [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5]) t = pick(t, sphere(d.x + fx * o * s, d.y + 0.4 * s, d.z + fz * o * s, 0.42 * s));
+        }
+        add('', '', t);
+      }
+    }
+    for (const r of this.rockGrid.near(p.x, p.z, MAX + 2, this.scanRocks)) {
+      const sh = ROCK_SHAPE[rockTypeOf(r.variant)];
+      add(`rock@${Math.round(r.x)},${Math.round(r.z)}`, ROCK_SCAN[rockTypeOf(r.variant)], sphere(r.x, r.y + sh.top * r.scale * 0.5, r.z, Math.max(sh.r, sh.top * 0.5) * r.scale));
+    }
+    for (const pp of this.props.all) {
+      const q = pp.prop;
+      if (pp.taken || Math.abs(q.x - p.x) > 30 || Math.abs(q.z - p.z) > 30) continue;
+      const t = q.kind === 'car' ? sphere(q.x, pp.y + 0.8, q.z, 2.3)
+        : q.kind === 'bus' ? sphere(q.x, pp.y + 1.6, q.z, 5)
+        : q.kind === 'lamp' ? cyl(q.x, q.z, 0.35, pp.y, pp.y + 8)
+        : q.kind === 'sign' ? cyl(q.x, q.z, 0.5, pp.y, pp.y + 2.8)
+        : q.kind === 'mailbox' ? sphere(q.x, pp.y + 0.6, q.z, 0.5)
+        : sphere(q.x, pp.y + 0.12, q.z, 0.3);
+      add(q.key, q.kind, t);
+    }
+    for (const c of this.corpses) if (Math.abs(c.x - p.x) < 30 && Math.abs(c.z - p.z) < 30) add(c.key, 'remains', sphere(c.x, c.y + 0.3, c.z, 0.7));
+    for (const f of this.fish.targets(p.x, p.z, 25)) add(f.key, f.kind, sphere(f.x, f.y, f.z, 0.35));
     // ดอกไม้ 13 ชนิด พืชริมน้ำ (ทุ่งหญ้า) · เฟิร์น เห็ด ดอกไม้ป่า พุ่มไม้ 6 ชนิด (พืชเล็กในป่า)
-    for (const f of this.grass.flowersNear(p.x, p.z, 14)) test(`flower-${f.kind}@${Math.round(f.x * 2)},${Math.round(f.z * 2)}`, plantScanKind(f.kind), f.x, f.y + f.scale * 0.8, f.z);
+    for (const f of this.grass.flowersNear(p.x, p.z, 14)) add(`flower-${f.kind}@${Math.round(f.x * 2)},${Math.round(f.z * 2)}`, plantScanKind(f.kind), sphere(f.x, f.y + f.scale * 0.5, f.z, Math.max(0.2, f.scale * 0.35)));
     for (const kind of ['fern', 'mushroom', 'flower', 'bush'] as const) {
       for (const pl of this.vegetation.plantsNow[kind]) {
         if (Math.abs(pl.x - p.x) > 14 || Math.abs(pl.z - p.z) > 14) continue;
         const sk = kind === 'bush' ? SHRUB_IDS[pl.variant ?? 0] : kind;
-        test(`${sk}@${Math.round(pl.x * 2)},${Math.round(pl.z * 2)}`, sk, pl.x, pl.y + (kind === 'bush' ? 0.8 : 0.3) * pl.scale, pl.z);
+        const t = kind === 'bush' ? sphere(pl.x, pl.y + 0.8 * pl.scale, pl.z, 0.9 * pl.scale) : sphere(pl.x, pl.y + 0.3 * pl.scale, pl.z, 0.35 * pl.scale + 0.1);
+        add(`${sk}@${Math.round(pl.x * 2)},${Math.round(pl.z * 2)}`, sk, t);
       }
     }
-    // ตึกเล็งที่กลางตัวตึก ไม่ต้องเช็กว่าตึกบังตัวเอง
-    for (const b of this.town.buildings) if (Math.abs(b.x - p.x) < 40 && Math.abs(b.z - p.z) < 40) test(b.key, 'building', b.x, b.y + Math.min(b.h, 6) / 2, b.z, false);
-    for (const s of this.cavesView.scannables) if (Math.abs(s.x - p.x) < 30 && Math.abs(s.z - p.z) < 30) test(s.key, s.kind, s.x, s.y, s.z);
-    for (const an of this.animals.scanTargets()) if (Math.abs(an.x - p.x) < 30 && Math.abs(an.z - p.z) < 30) test(an.key, an.kind, an.x, an.y, an.z);
-    for (const cr of this.critters.targets(p.x, p.z, 30)) test(cr.key, cr.kind, cr.x, cr.y, cr.z);
+    // ตึกไม่ต้องเช็กว่าตึกบังตัวเอง
+    for (const b of this.town.buildings) if (Math.abs(b.x - p.x) < 45 && Math.abs(b.z - p.z) < 45) add(b.key, 'building', cyl(b.x, b.z, Math.max(b.w, b.d) * 0.45, b.y, b.y + b.h), false);
+    for (const s of this.cavesView.scannables) if (Math.abs(s.x - p.x) < 30 && Math.abs(s.z - p.z) < 30) add(s.key, s.kind, sphere(s.x, s.y, s.z, s.kind === 'painting' ? 1.6 : 0.6));
+    for (const an of this.animals.scanTargets()) if (Math.abs(an.x - p.x) < 30 && Math.abs(an.z - p.z) < 30) add(an.key, an.kind, sphere(an.x, an.y, an.z, an.r));
+    for (const cr of this.critters.targets(p.x, p.z, 30)) add(cr.key, cr.kind, sphere(cr.x, cr.y, cr.z, 0.22));
     const ff = this.animals.nearestFirefly(p.x, p.z);
-    if (ff) test(`firefly-${ff.i}`, 'firefly', ff.x, ff.y, ff.z);
+    if (ff) add(`firefly-${ff.i}`, 'firefly', sphere(ff.x, ff.y, ff.z, 0.25));
     const bp = this.town.bridge[0];
-    if (bp && Math.abs(bp.x - p.x) < 40 && Math.abs(bp.z - p.z) < 40) test('bridge-0', 'bridge', bp.x, bp.y1, bp.z);
-    // ตรงทิศที่สุดก่อน · ชิ้นที่ถูกบังข้ามไปดูชิ้นถัดไป (ดูไม่เกิน 6 ชิ้น)
-    cand.sort((a, b) => b.c - a.c);
+    if (bp && Math.abs(bp.x - p.x) < 40 && Math.abs(bp.z - p.z) < 40) add('bridge-0', 'bridge', sphere(bp.x, bp.y1, bp.z, 5));
+    // ชิ้นที่เส้นเล็งชนก่อน (ใกล้สุด) · ถูกบังข้ามไปดูชิ้นถัดไป (ดูไม่เกิน 6 ชิ้น)
+    cand.sort((a, b) => a.t - b.t);
     let found: ScanTarget | null = null;
     for (let i = 0; i < Math.min(6, cand.length) && !found; i++) {
       const c = cand[i];
-      if (inSight(this.terrain, this.structures, origin, c.x, c.y, c.z, c.wall)) found = { key: c.key, kind: c.kind, x: c.x, y: c.y, z: c.z };
+      // ของที่บังเส้นเล็งแต่สแกนไม่ได้ (ขอนไม้ ตอไม้) อยู่หน้าสุด = ตรงนี้ไม่มีอะไรให้สแกน
+      if (!c.kind) break;
+      // เช็กของบังถึงจุดก่อนผิวของชิ้นนั้นเล็กน้อย (ไม่ให้ตัวมันเองนับเป็นของบัง)
+      const k = Math.max(0.3, c.t - 0.25);
+      if (inSight(this.terrain, this.structures, origin, origin.x + dir.x * k, origin.y + dir.y * k, origin.z + dir.z * k, c.wall)) found = { key: c.key, kind: c.kind, x: c.x, y: c.y, z: c.z, box: c.box };
     }
     if (found) found.special = found.kind === 'remains' || found.kind === 'painting' || (this.props.byKey.get(found.key)?.prop.special ?? false);
     return found;
   }
 
-  private scanCand: { key: string; kind: string; x: number; y: number; z: number; c: number; wall: boolean }[] = [];
+  private scanCand: { key: string; kind: string; x: number; y: number; z: number; t: number; wall: boolean; box: Box6 }[] = [];
   private scanTrees: TreePoint[] = [];
   private scanRocks: Placed[] = [];
 
   /** สแกนเสร็จ (ช่วง 6 ทำข้อความสแกน 3 ชั้น) */
   onScanned(target: ScanTarget): void {
     const r = this.scanLog.scan(target.kind, target.key, target.special);
+    if (target.kind === 'building') this.setViewerBuilding(target.key);
     this.audio.scanDone();
     this.scanCard.show(target.kind, this.scanLog, r.firstTime || r.newTruth || r.newLog, this.elapsed);
     const k = kindOf(target.kind);
-    this.hud.toast(`${t('scanSent')}<br><b>${k ? shownName(k, this.scanLog.truth(target.kind)) : target.kind}</b>`);
+    // ข้อความเด้งเฉพาะของชิ้นที่เพิ่งสแกนครั้งแรก (เดิมเด้งทุกรอบที่สแกนวนซ้ำ ซ้อนกันหลายอัน)
+    if (r.newObject) this.hud.toast(`${t('scanSent')}<br><b>${k ? shownName(k, this.scanLog.truth(target.kind)) : target.kind}</b>`);
+  }
+
+  /** ตึกที่ขึ้นในคอลเลกชัน: หลังที่สแกนล่าสุด · ยังไม่ได้สแกนตั้งแต่เปิดเกมใช้ร้านสองชั้นที่ยังมีหลังคา */
+  private setViewerBuilding(key?: string): void {
+    const list = this.town.buildings;
+    const b = (key ? list.find((x) => x.key === key) : undefined) ?? list.find((x) => x.decay === 0 && x.floors >= 2 && !!x.sign) ?? list[0];
+    if (b) this.viewer.setSource('building', () => buildingPreview(b, this.town.parts.get(b.key) ?? []));
   }
 
   private openInventory(tab: 'bag' | 'collection'): void {
@@ -926,6 +1044,7 @@ export class App {
     this.worldGround.contextY = Infinity;
     this.player.place(SPAWN_POINT.x, SPAWN_POINT.z, SPAWN_POINT.heading);
     this.terrainMesh.update(SPAWN_POINT.x, SPAWN_POINT.z, true);
+    this.cliffs.update(SPAWN_POINT.x, SPAWN_POINT.z, true);
     this.player.stamina.value = 100;
     this.player.stamina.exhausted = false;
     this.rig.snap(this.player);
@@ -1077,6 +1196,8 @@ export class App {
       // Esc ในหน้าตั้งค่า = กลับเข้าเกม · ในคอลเลกชันที่เปิดจากหน้าเริ่มเกม Esc Tab I = ปิด (ป้ายบนปุ่มบอกไว้)
       const close = this.input.wasPressed('Escape') || this.input.wasPressed('Tab') || this.input.wasPressed('KeyI');
       if (this.settingsScreen.open && this.input.wasPressed('Escape')) { this.settingsScreen.hide(); this.resumeControl(); }
+      // กรอบดูโมเดลขยายอยู่ Esc ย่อกรอบก่อน กดอีกครั้งถึงปิดหน้า
+      else if (!this.started && this.inventory.open && this.input.wasPressed('Escape') && this.inventory.shrinkViewer()) { /* ย่อกรอบแล้ว */ }
       else if (!this.started && this.inventory.open && close) this.closeScreens();
       this.updateIdle(dt);
       this.input.endFrame();
@@ -1099,6 +1220,7 @@ export class App {
     if (this.inventory.open || this.shipScreen.open) {
       // หน้ายานหลังเกิดใหม่ Esc = ออกเดินทางด้วยของที่เลือกไว้ (เดิมปิดแล้วได้ร่างมือเปล่า)
       if (this.input.wasPressed('Escape') && this.shipScreen.open && this.respawnShip) this.depart(this.shipScreen.choice);
+      else if (this.input.wasPressed('Escape') && this.inventory.open && this.inventory.shrinkViewer()) { /* กรอบดูโมเดลขยายอยู่ ย่อกรอบก่อน */ }
       else if (this.input.wasPressed('Escape')) this.closeScreens();
       this.input.endFrame();
       return;
@@ -1146,6 +1268,22 @@ export class App {
     this.updateBody(dt);
     if (this.dying) { inp.endFrame(); return; }
     this.tools.update(dt, (b) => inp.held(b), (b) => inp.pressedAny(b), this.camera.position, this.rig.viewDir());
+    // สแกน ยิงหมึก เล็ง หรือยืนส่องไฟฉาย: ตัวละครหันตามกล้อง แขนที่ยกชี้ไปทางจุดเล็ง
+    // (เดิมแขนชี้ตามทิศตัว กดสแกนแล้วมือชี้ไปอีกฝั่ง พี่กันทัก 26 ต.ค. 2569)
+    const tl = this.tools;
+    if (tl.aiming || this.aiming || (tl.lightOn && this.player.speed < 0.3)) {
+      const pl = this.player;
+      let d = this.rig.yaw - pl.heading;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      pl.heading += d * Math.min(1, dt * 14);
+    }
+    this.hero.aimPitch = this.rig.pitch + 0.12;
+    // ลำแสงจากหัวเครื่องสแกนในมือไปถึงจุดที่เล็ง (พี่กันสั่ง 26 ต.ค. 2569)
+    if (tl.scanning && tl.scanTarget) {
+      this.hero.hands[tl.scanArm].getWorldPosition(this.beamFrom).addScaledVector(this.rig.viewDir(), 0.22);
+      this.beamTo.set(tl.scanTarget.x, tl.scanTarget.y, tl.scanTarget.z);
+      this.scanBeam.update(this.beamFrom, this.beamTo, tl.scanDone, this.elapsed);
+    } else this.scanBeam.update(null, null, false, this.elapsed);
 
     const p = this.player;
     this.hero.root.position.set(p.x, p.y, p.z);
@@ -1155,6 +1293,7 @@ export class App {
     this.camWorld ??= { heightAt: (x, z) => this.camGround(x, z), colliders: this.colliders, blockers: (a, b) => this.camBlock(a, b) };
     this.rig.update(dt, p, this.camWorld, this.aiming || this.tools.aiming, this.elapsed - inp.lastMouseMove);
     this.terrainMesh.update(this.camera.position.x, this.camera.position.z);
+    this.cliffs.update(p.x, p.z);
     this.vegetation.update(p.x, p.z);
     this.grass.update(p.x, p.z, p.y);
     this.cullFar(p.x, p.z);
@@ -1217,8 +1356,45 @@ export class App {
     inp.endFrame();
   }
 
+  /** กล่องครอบของที่เล็งอยู่ บนจอ (พิกเซล) · null = ไม่มี */
+  private scanBoxView(): { x: number; y: number; w: number; h: number; state: 'aim' | 'scan' | 'done' } | null {
+    const tl = this.tools;
+    const target = tl.scanning ? tl.scanTarget : tl.holdingScanner ? tl.aimTarget : null;
+    const b = target?.box;
+    if (!b) return null;
+    const cam = this.camera;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, front = 0;
+    for (let i = 0; i < 8; i++) {
+      const c = this.boxCorner.set(i & 1 ? b[3] : b[0], i & 2 ? b[4] : b[1], i & 4 ? b[5] : b[2]);
+      // มุมที่อยู่หลังกล้องข้ามไป (ฉายแล้วกลับด้าน)
+      c.applyMatrix4(cam.matrixWorldInverse);
+      if (c.z > -cam.near) continue;
+      c.applyMatrix4(cam.projectionMatrix);
+      front++;
+      const sx = (c.x * 0.5 + 0.5) * W;
+      const sy = (-c.y * 0.5 + 0.5) * H;
+      x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+    }
+    if (!front) return null;
+    // อยู่ในจอเสมอ ไม่เล็กเกินจนมุมทับกัน
+    x0 = Math.max(6, x0); y0 = Math.max(6, y0); x1 = Math.min(W - 6, x1); y1 = Math.min(H - 6, y1);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const w = Math.max(36, x1 - x0);
+    const h = Math.max(36, y1 - y0);
+    return { x: cx - w / 2, y: cy - h / 2, w, h, state: tl.scanDone ? 'done' : tl.scanning ? 'scan' : 'aim' };
+  }
+
   private updateHud(): void {
     const p = this.player;
+    const tl = this.tools;
+    // ชื่อของที่เล็งอยู่ · ชนิดที่ยังไม่เคยสแกนไม่บอกชื่อ
+    const aimName = (tg: ScanTarget) => {
+      const k = kindOf(tg.kind);
+      return k && this.scanLog.known(tg.kind) ? shownName(k, this.scanLog.truth(tg.kind)) : t('scanUnknown');
+    };
     const light = findGear(this.loadout, 'flashlight');
     const name = (id: string) => {
       const k = kindOf(id);
@@ -1235,12 +1411,20 @@ export class App {
       battery: light && light.on ? light.charge ?? 0 : null,
       belt: beltViews(this.loadout, name),
       markers: this.markers(),
-      prompt: this.tools.scanning
-        ? { key: ARM_KEY_LABEL[this.tools.scanArm](), text: this.tools.scanProgress < 0 ? t('scanNothing') : `${t('scanning')} ${Math.round(this.tools.scanProgress * 100)}%` }
+      // ป้ายข้างจุดเล็ง: กำลังสแกน · สแกนเสร็จแล้ว · ตรงนี้ไม่มีอะไร · หรือถือเครื่องสแกนอยู่แล้วเล็งโดนอะไร
+      // (ของชนิดที่ยังไม่เคยสแกนขึ้นว่าของที่ยังไม่รู้จัก ไม่บอกชื่อก่อนสแกน)
+      prompt: tl.scanning
+        ? { key: ARM_KEY_LABEL[tl.scanArm](), text: tl.scanProgress < 0 ? t('scanNothing') : tl.scanDone && tl.scanTarget ? `${t('scanComplete')} · ${aimName(tl.scanTarget)}` : `${t('scanning')} ${Math.round(tl.scanProgress * 100)}%` }
         : this.interact ? { key: this.interact.key, text: this.interact.text }
         // ป้ายคลิกจอตอนล็อกเมาส์ไม่สำเร็จเอาออกแล้ว (พี่กันสั่ง: บนจอไม่บอกเรื่องปุ่ม)
+        : tl.holdingScanner && tl.aimTarget ? { key: '', text: aimName(tl.aimTarget) }
         : null,
-      reticle: this.aiming || this.tools.aiming,
+      // พิกัด X Y ใต้มินิแมพ (X = x ในโค้ด ตะวันออกบวก · Y = −z ในโค้ด เหนือบวก) ไว้ให้พี่กันบอกตำแหน่งที่อยากให้แก้
+      coords: this.settings.coords ? { x: Math.round(p.x), y: Math.round(-p.z), h: Math.round(p.y) } : null,
+      // จุดเล็งกลางจอ: ขึ้นตลอดตอนถือเครื่องสแกน (พี่กันสั่ง 26 ต.ค. 2569) · เข้มขึ้นเมื่อเล็งโดนของ · สว่างเมื่อสแกนเสร็จ
+      reticle: !(tl.holdingScanner || this.aiming || tl.aiming) ? 'off' : tl.scanDone ? 'done' : (tl.scanning ? tl.scanTarget : tl.aimTarget) ? 'target' : 'idle',
+      // กรอบไฮไลต์รอบของที่เล็งหรือกำลังสแกน (พี่กันสั่ง 26 ต.ค. 2569)
+      scanBox: this.scanBoxView(),
       status: this.statusChips(),
       shoulder: this.rig.side,
     }, this.elapsed);

@@ -5,6 +5,9 @@ import { inkBlob, inkSplat, toolModel } from '../render/models/tools';
 import { smallItemModel } from '../render/models/props';
 import { t } from '../ui/strings';
 
+/** กล่องครอบ [x0, y0, z0, x1, y1, z1] */
+export type Box6 = [number, number, number, number, number, number];
+
 /** ของที่สแกนได้ตรงหน้า */
 export interface ScanTarget {
   /** รหัสชิ้นนี้ (ไม่ซ้ำกันทั้งโลก) */
@@ -16,6 +19,8 @@ export interface ScanTarget {
   z: number;
   /** ชิ้นพิเศษ ปลดล็อกบันทึกส่วนตัว */
   special?: boolean;
+  /** กล่องครอบของชิ้นนั้น (วาดกรอบไฮไลต์) · x y z ข้างบนคือจุดที่เส้นเล็งชน */
+  box?: Box6;
 }
 
 /** สิ่งที่อุปกรณ์ต้องใช้จากเกม (ต่อเข้ากับร่างกาย สแกน สัตว์ ในช่วงถัดไป) */
@@ -56,10 +61,20 @@ export class Tools {
   private blobs: Blob[] = [];
   private splats: Splat[] = [];
   private fireCooldown = [0, 0, 0, 0];
-  /** ความคืบหน้าการสแกน 0 ถึง 1 */
+  /** ความคืบหน้าการสแกน 0 ถึง 1 · -1 = ตรงจุดเล็งไม่มีอะไรให้สแกน */
   scanProgress = 0;
   scanTarget: ScanTarget | null = null;
   scanning = false;
+  /** สแกนชิ้นที่เล็งอยู่ครบแล้วในการกดครั้งนี้ (ค้างไว้ที่ 100% ไม่วนสแกนซ้ำ · ปล่อยปุ่มแล้วกดใหม่ถึงเริ่มใหม่) */
+  scanDone = false;
+  private doneKey: string | null = null;
+  /** ถือเครื่องสแกนอยู่ในแขนไหนสักข้าง (ขึ้นจุดเล็งกลางจอ) */
+  holdingScanner = false;
+  /** ของที่อยู่ใต้จุดเล็งตอนนี้ (ดูล่วงหน้าตอนถือเครื่องสแกนแม้ยังไม่กด) */
+  aimTarget: ScanTarget | null = null;
+  private aimCheck = 0;
+  /** ไฟฉายเปิดอยู่ (ตัวละครหันตามกล้องตอนยืนนิ่ง แสงส่องตามกล้อง) */
+  lightOn = false;
   /** แขนที่กำลังสแกน (ไว้บอกปุ่มที่ถูกในป้ายกลางจอ) */
   scanArm = 0;
   aiming = false;
@@ -85,10 +100,13 @@ export class Tools {
       this.raiseHold[a] = Math.max(0, this.raiseHold[a] - dt);
       raise[a] = this.raiseHold[a] > 0 ? 1 : 0;
     }
+    this.holdingScanner = false;
+    this.host.hero.lookTarget = null;
     for (let arm = 0; arm < 4; arm++) {
       this.fireCooldown[arm] = Math.max(0, this.fireCooldown[arm] - dt);
       const s = held(l, arm);
       if (!s || s.kind !== 'gear') continue;
+      if (s.id === 'scanner') this.holdingScanner = true;
       const btn = ARM_BUTTON[arm];
       const isDown = down(btn);
       const isPressed = pressed(btn);
@@ -132,31 +150,57 @@ export class Tools {
           break;
       }
     }
-    if (!this.scanning) { this.scanProgress = 0; this.scanTarget = null; }
-    this.updateLight(dt);
+    if (!this.scanning) {
+      // ปล่อยปุ่มแล้ว: ล้างสถานะ กดใหม่ถึงสแกนชิ้นเดิมได้อีก
+      this.scanProgress = 0;
+      this.scanTarget = null;
+      this.scanDone = false;
+      this.doneKey = null;
+      // ถือเครื่องสแกนอยู่แต่ยังไม่กด: ดูล่วงหน้าว่าจุดเล็งอยู่บนอะไร (ทุก 0.12 วินาที ไม่ต้องทุกเฟรม)
+      this.aimCheck -= dt;
+      if (!this.holdingScanner) this.aimTarget = null;
+      else if (this.aimCheck <= 0) {
+        this.aimCheck = 0.12;
+        this.aimTarget = this.host.findScanTarget(viewOrigin, viewDir);
+      }
+    }
+    this.updateLight(dt, viewDir);
     this.updateInk(dt);
   }
 
+  /**
+   * กดค้างสแกนของที่อยู่ใต้จุดเล็ง · ครบ 100% แล้วหยุดค้างไว้ ไม่วนสแกนซ้ำ (พี่กันทัก 26 ต.ค. 2569 เดิมครบแล้วเริ่ม 0% ใหม่ไม่จบ ข้อความเด้งซ้ำ)
+   * เลื่อนจุดเล็งไปของชิ้นอื่นระหว่างกด = เริ่มสแกนชิ้นใหม่
+   */
   private scan(dt: number, origin: THREE.Vector3, dir: THREE.Vector3): void {
     this.scanning = true;
     this.aiming = true;
     const target = this.host.findScanTarget(origin, dir);
+    this.aimTarget = target;
     if (!target) {
-      if (this.scanProgress === 0 && !this.scanTarget) this.scanProgress = -1; // ไม่มีอะไร
+      this.scanTarget = null;
+      this.scanDone = false;
+      this.scanProgress = -1; // ตรงจุดเล็งไม่มีอะไร
+      return;
+    }
+    // ปลาหมึกในโหลหันไปมองของที่สแกน
+    this.host.hero.lookTarget = target;
+    if (target.key === this.doneKey) {
+      this.scanTarget = target;
+      this.scanDone = true;
+      this.scanProgress = 1;
       return;
     }
     if (!this.scanTarget || this.scanTarget.key !== target.key) {
       this.scanTarget = target;
       this.scanProgress = 0;
+      this.scanDone = false;
     }
     this.scanProgress = Math.min(1, Math.max(0, this.scanProgress) + dt / SCAN_TIME);
-    // ปลาหมึกหันมองของที่สแกน
-    const oc = this.host.hero.octo;
-    oc.lookAt(target.x, target.y, target.z);
     if (this.scanProgress >= 1) {
       this.host.onScanned(target);
-      this.scanProgress = 0;
-      this.scanTarget = null;
+      this.doneKey = target.key;
+      this.scanDone = true;
     }
   }
 
@@ -201,7 +245,7 @@ export class Tools {
     this.splats = this.splats.filter((s) => (s.life > 0 ? true : (this.host.scene.remove(s.mesh), false)));
   }
 
-  private updateLight(dt: number): void {
+  private updateLight(dt: number, viewDir: THREE.Vector3): void {
     const l = this.host.loadout;
     let lightArm = -1;
     let light: GearSlot | null = null;
@@ -219,12 +263,14 @@ export class Tools {
       }
       if (this.host.sunlit()) s.charge = Math.min(1, (s.charge ?? 0) + dt / GEAR.flashlight.sunChargeSeconds);
     }
+    this.lightOn = !!(light && light.on && lightArm >= 0);
     if (light && light.on && lightArm >= 0) {
-      // ถือไฟฉายยกชี้ไปข้างหน้า แสงออกจากหัวไฟฉายในมือ
+      // ถือไฟฉายยกชี้ไปข้างหน้า แสงออกจากหัวไฟฉายในมือ ส่องไปทางที่กล้องมอง
+      // (เดิมส่องตามทิศตัวละคร หมุนกล้องแล้วแสงไม่ตาม พี่กันทัก 26 ต.ค. 2569)
       this.host.hero.raise[lightArm] = 1;
       const hand = this.host.hero.hands[lightArm];
       hand.getWorldPosition(this.spot.position);
-      const fwd = this.tmpA.set(0, -0.15, -1).applyQuaternion(this.host.hero.root.quaternion);
+      const fwd = this.tmpA.copy(viewDir).setY(viewDir.y - 0.08).normalize();
       this.spot.target.position.copy(this.spot.position).addScaledVector(fwd, 10);
       this.spot.intensity = 60 * (0.4 + 0.6 * Math.min(1, (light.charge ?? 0) * 4));
     } else {

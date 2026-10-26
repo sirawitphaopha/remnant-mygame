@@ -33,9 +33,11 @@ export interface Settings {
   gear: number;
   sensitivity: number;
   viewDistance: number;
+  /** พิกัด X Y ใต้มินิแมพ (พี่กันขอ 26 ต.ค. 2569 ไว้บอกตำแหน่งที่อยากให้แก้) */
+  coords: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { quality: 'medium', lang: 'th', nature: 0.8, gear: 0.65, sensitivity: 0.45, viewDistance: 0.6 };
+export const DEFAULT_SETTINGS: Settings = { quality: 'medium', lang: 'th', nature: 0.8, gear: 0.65, sensitivity: 0.45, viewDistance: 0.6, coords: true };
 
 function storage(): Storage | null {
   try {
@@ -133,6 +135,7 @@ export function readSettings(): Settings {
       gear: num(s.gear, DEFAULT_SETTINGS.gear),
       sensitivity: num(s.sensitivity, DEFAULT_SETTINGS.sensitivity),
       viewDistance: num(s.viewDistance, DEFAULT_SETTINGS.viewDistance),
+      coords: s.coords !== false,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

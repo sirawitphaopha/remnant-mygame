@@ -60,6 +60,16 @@ function paintingTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+/** ภาพวาดรอยมือในคอลเลกชัน: ผนังหินปูนขรุขระสีครีม มีภาพวาดอยู่ด้านหน้า (เดิมขึ้นเป็นกล่องเทา 10 ซม.) */
+export function paintingPreview(): THREE.Group {
+  const g = new THREE.Group();
+  const wall = new THREE.Mesh(jitter(new THREE.BoxGeometry(3.8, 2.2, 0.5, 10, 6, 2), 0.07, 2, 7), new THREE.MeshLambertMaterial({ color: 0xb5a98f }));
+  wall.position.z = -0.3;
+  const paint = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), new THREE.MeshLambertMaterial({ map: paintingTexture(), transparent: true, opacity: 0.92 }));
+  g.add(wall, paint);
+  return g;
+}
+
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 
 /** กรวยขรุขระ (หินงอก หินย้อย) ปลายชี้ขึ้นจากฐาน y = 0 */

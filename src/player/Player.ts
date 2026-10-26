@@ -163,8 +163,8 @@ export class Player {
     this.vz += (dirZ * want - this.vz) * k;
 
     // กระโดด
-    if (intent.jump && this.state === 'ground' && spendJump(this.stamina, intent.loadRatio)) {
-      this.vy = MOVE.jumpSpeed;
+    if (intent.jump && this.state === 'ground') {
+      this.vy = MOVE.jumpSpeed * spendJump(this.stamina, intent.loadRatio);
       this.state = 'air';
       this.fallTop = this.y;
     }

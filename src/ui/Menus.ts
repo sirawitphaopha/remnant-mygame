@@ -109,6 +109,7 @@ export class SettingsScreen {
       switch (b.dataset.act) {
         case 'quality': this.s.quality = v as Settings['quality']; this.act.change({ ...this.s }); break;
         case 'lang': this.s.lang = v as Settings['lang']; this.act.change({ ...this.s }); break;
+        case 'coords': this.s.coords = v === 'on'; this.act.change({ ...this.s }); break;
         case 'resume': this.act.resume(); return;
         case 'title': this.act.toTitle(); return;
       }
@@ -150,6 +151,7 @@ export class SettingsScreen {
           <div class="setrow"><span>${t('language')}</span>${seg('lang', s.lang, [['th', 'langThai'], ['en', 'langEnglish']])}</div>
           <div class="setrow"><span>${t('quality')}</span>${seg('quality', s.quality, [['low', 'qLow'], ['medium', 'qMed'], ['high', 'qHigh']])}</div>
           ${range('viewDistance', 'viewDist')}${range('nature', 'natureVol')}${range('gear', 'gearVol')}${range('sensitivity', 'mouseSens')}
+          <div class="setrow"><span>${t('showCoords')}</span>${seg('coords', s.coords ? 'on' : 'off', [['on', 'coordsOn'], ['off', 'coordsOff']])}</div>
           <div class="setrow"><span>${t('progress')}</span><span class="note">${t('autoSaved')}</span></div>
         </div>
         <div class="panel"><h4>${t('controls')}</h4>

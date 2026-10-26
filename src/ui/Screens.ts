@@ -44,9 +44,11 @@ function layersHtml(k: Kind, log: ScanLog): string {
   // สัตว์: ผลของหมึก ต้องสแกนก่อนถึงรู้
   const sp = SPECIES_BY_ID.get(k.id);
   const ink = sp && count > 0 ? `<div class="layer"><span class="lt">${t('inkLabel')}</span>${t(sp.ink === 'flee' ? 'inkFlee' : sp.ink === 'enraged' ? 'inkEnraged' : 'inkIgnore')}</div>` : '';
-  return ink + `
+  // ผลของหมึกอยู่ถัดจากชั้นความจริง (เดิมอยู่บนสุดก่อนชั้นแรก อ่านแล้วงง)
+  return `
     <div class="layer"><span class="lt">${t('layer1')}</span>${esc(L(k.guess))}</div>
     <div class="layer ${truth ? '' : 'locked'}"><span class="lt">${t('layer2')} <span class="dots">${dots}</span></span>${truth ? esc(L(k.truth)) : t('lockTruth')}</div>
+    ${ink}
     <div class="layer personal ${hasLog ? '' : 'locked'}"><span class="lt">${t('layer3')}</span>${k.log ? (hasLog ? esc(L(k.log)) : t('lockLog')) : t('noLog')}</div>`;
 }
 
@@ -75,6 +77,8 @@ export class InventoryScreen {
   private selectedBelt: number | null = null;
   private cat: Category | 'all' = 'all';
   private selectedKind: string | null = null;
+  /** กรอบดูโมเดลขยายเต็มหน้าต่างอยู่ (พี่กันขอ 26 ต.ค. 2569 *"โมเดลที่ดู ซูมได้นะ กดขยายดูได้"*) */
+  private viewerBig = false;
   private data!: { loadout: Loadout; log: ScanLog; body: BodyView; viewOnly?: boolean };
 
   constructor(parent: HTMLElement, private viewer: Viewer, private act: InventoryActions) {
@@ -111,7 +115,22 @@ export class InventoryScreen {
     // ปิดหน้ากระเป๋า = ของที่เห็นแล้วไม่ใหม่อีก
     if (!this.root.hidden && this.data && !this.data.viewOnly) this.markSeen(this.data.loadout);
     this.root.hidden = true;
+    this.viewerBig = false;
     this.viewer.stop();
+  }
+
+  /** Esc ตอนกรอบดูโมเดลขยายอยู่ = ย่อกรอบ (คืน true) · ไม่ได้ขยายอยู่คืน false ให้ Esc ปิดหน้าตามเดิม */
+  shrinkViewer(): boolean {
+    if (!this.open || !this.viewerBig) return false;
+    this.viewerBig = false;
+    this.render();
+    return true;
+  }
+
+  /** กรอบดูโมเดล ปุ่มขยายหรือย่อมุมขวาบน · ขยายแล้วมีชื่อของมุมซ้ายบน */
+  private viewerHost(name: string): string {
+    const big = this.viewerBig;
+    return `<div class="viewer-host ${big ? 'big' : ''}">${big ? `<span class="vname">${name}</span>` : ''}<button type="button" class="btn expand" data-act="bigview">${big ? `${t('viewSmall')}<kbd>Esc</kbd>` : t('viewBig')}</button><span class="turn">${t('dragRotate')}</span></div>`;
   }
 
   /** ของที่เคยเห็นในหน้ากระเป๋าแล้ว · ของที่เก็บมาหลังปิดหน้ากระเป๋าครั้งก่อนติดป้าย "ใหม่" (รายงานตรวจข้อ 65 · มอคอัปหน้า 5) */
@@ -143,6 +162,7 @@ export class InventoryScreen {
       case 'unnest': this.act.unnestBag(this.bagSlot, Number(v)); break;
       case 'cat': this.cat = v as Category | 'all'; break;
       case 'kind': this.selectedKind = v; break;
+      case 'bigview': this.viewerBig = !this.viewerBig; break;
     }
     this.render();
   }
@@ -201,7 +221,7 @@ export class InventoryScreen {
         </div>
         <div class="panel">
           <h4>${sel ? esc(shownName(sel, this.data.log.truth(sel.id))) : t('pickHint')}</h4>
-          <div class="viewer-host">${sel ? `<span class="turn">${t('dragRotate')}</span>` : ''}</div>
+          ${sel ? this.viewerHost(esc(shownName(sel, this.data.log.truth(sel.id)))) : '<div class="viewer-host"></div>'}
           ${sel ? `<div class="layers">${layersHtml(sel, this.data.log)}</div>` : ''}
         </div>
         <div class="panel">
@@ -238,7 +258,7 @@ export class InventoryScreen {
         <div class="panel">
           ${sel && known(sel) ? `
             <h4>${esc(shownName(sel, log.truth(sel.id)))} · ${sel.small ? t('smallObj') : t('largeObj')}</h4>
-            <div class="viewer-host"><span class="turn">${t('dragRotate')}</span></div>
+            ${this.viewerHost(esc(shownName(sel, log.truth(sel.id))))}
             <div class="layers">${layersHtml(sel, log)}</div>` : `<h4>${t('notFound')}</h4>`}
         </div>
       </div>`;
@@ -383,7 +403,8 @@ export class ScanCard {
     const truth = log.truth(kindId);
     this.root.innerHTML = `
       <div class="kind">${unlocked ? `${t('newLayer')} · ` : ''}${k.small ? t('smallObj') : t('largeObj')}</div>
-      <h3>${esc(shownName(k, truth))}${truth ? '' : ` <small>${t('scanned')} ${log.count(kindId)}/${log.needFor(kindId)}</small>`}</h3>
+      <h3>${esc(shownName(k, truth))}${truth ? '' : ` <small>${t('scannedOfKind')} ${log.count(kindId)}/${log.needFor(kindId)}</small>`}</h3>
+      ${truth ? '' : `<div class="guess-note">${t('nameGuessNote')}</div>`}
       ${layersHtml(k, log)}`;
     this.root.hidden = false;
     this.until = now + 9;

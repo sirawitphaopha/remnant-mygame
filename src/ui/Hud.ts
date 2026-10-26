@@ -40,7 +40,12 @@ export interface HudView {
   belt: SlotView[];
   markers: MapMarker[];
   prompt: { key: string; text: string } | null;
-  reticle: boolean;
+  /** พิกัดใต้มินิแมพ (เมตร · X ตะวันออกบวก · Y เหนือบวก · h ความสูง) · null = ซ่อน */
+  coords?: { x: number; y: number; h: number } | null;
+  /** จุดเล็งกลางจอ · off ซ่อน · idle ถือเครื่องสแกนอยู่ · target เล็งโดนของ · done สแกนเสร็จ */
+  reticle: 'off' | 'idle' | 'target' | 'done';
+  /** กรอบไฮไลต์รอบของที่เล็ง (พิกเซลบนจอ) */
+  scanBox?: { x: number; y: number; w: number; h: number; state: 'aim' | 'scan' | 'done' } | null;
   /** ไหล่กล้อง 1 = ขวา (ตัวละครค่อนซ้าย ป้ายอยู่ขวา) -1 = ซ้าย */
   shoulder?: number;
   /** ป้ายสถานะค้างมุมซ้ายบน (โหลร้าว หนาว ออกซิเจนลด) อยู่จนกว่าสถานะหาย ตามมอคอัปหน้า 3 */
@@ -72,6 +77,11 @@ export class Hud {
   private lastStatus = '';
   private promptEl: HTMLDivElement;
   private reticleEl: HTMLDivElement;
+  private scanBoxEl: HTMLDivElement;
+  private coordsEl: HTMLDivElement;
+  private lastCoords = '';
+  private lastBox = '';
+  private lastReticle = '';
   private lastBelt = '';
   private lastPrompt = '';
   /** until = NaN คือยังไม่เริ่มนับ (เกิดตอนหน้าจอซ้อนเปิด) เริ่มนับเมื่อกลับมาเห็นจอเกม */
@@ -98,6 +108,9 @@ export class Hud {
     }
     el('div', 'compass-pointer', this.root);
 
+    // พิกัดใต้มินิแมพ ไว้บอกตำแหน่งที่อยากให้แก้
+    this.coordsEl = el('div', 'coords', this.root);
+    this.coordsEl.hidden = true;
     const mm = el('div', 'minimap', this.root);
     this.mini = el('canvas', '', mm);
     this.mini.width = this.mini.height = 336;
@@ -121,6 +134,10 @@ export class Hud {
     this.promptEl.hidden = true;
     this.reticleEl = el('div', 'reticle', this.root);
     this.reticleEl.hidden = true;
+    // กรอบไฮไลต์: มุมเหลี่ยมสี่มุม กับเส้นกวาดตอนกำลังสแกน
+    this.scanBoxEl = el('div', 'scan-box', this.root);
+    this.scanBoxEl.innerHTML = '<i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>';
+    this.scanBoxEl.hidden = true;
 
     this.applyLang();
     onLangChange(() => {
@@ -211,7 +228,31 @@ export class Hud {
       // บนจอไม่บอกปุ่ม (พี่กันสั่ง: ปุ่มทั้งหมดอ่านได้ที่หน้าตั้งค่า) เหลือแต่สิ่งที่จะเกิดขึ้น
       if (v.prompt) this.promptEl.textContent = v.prompt.text;
     }
-    this.reticleEl.hidden = !v.reticle;
+    const ck = v.coords ? `X ${v.coords.x} · Y ${v.coords.y} · ${t('coordAlt')} ${v.coords.h} ${t('meter')}` : '';
+    if (ck !== this.lastCoords) {
+      this.lastCoords = ck;
+      this.coordsEl.hidden = !v.coords;
+      this.coordsEl.textContent = ck;
+    }
+    if (v.reticle !== this.lastReticle) {
+      this.lastReticle = v.reticle;
+      this.reticleEl.hidden = v.reticle === 'off';
+      this.reticleEl.className = `reticle ${v.reticle}`;
+    }
+    const b = v.scanBox;
+    const boxKey = b ? `${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.w)},${Math.round(b.h)},${b.state}` : '';
+    if (boxKey !== this.lastBox) {
+      this.lastBox = boxKey;
+      this.scanBoxEl.hidden = !b;
+      if (b) {
+        const st = this.scanBoxEl.style;
+        st.left = `${Math.round(b.x)}px`;
+        st.top = `${Math.round(b.y)}px`;
+        st.width = `${Math.round(b.w)}px`;
+        st.height = `${Math.round(b.h)}px`;
+        this.scanBoxEl.className = `scan-box ${b.state}`;
+      }
+    }
 
     this.drawMinimap(v);
   }

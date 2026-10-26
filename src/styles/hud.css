@@ -21,6 +21,9 @@
 .minimap { position: absolute; top: 18px; right: 22px; width: 168px; height: 168px; border-radius: 50%; overflow: hidden;
   border: 1px solid rgba(255,255,255,.35); background: rgba(5,12,12,.55); box-shadow: 0 0 0 4px rgba(0,0,0,.22); }
 .minimap canvas { width: 100%; height: 100%; display: block; }
+/* พิกัดใต้มินิแมพ · ตัวเลขแบบเท่ากันทุกหลัก ไม่ขยับไปมาตอนเดิน */
+.coords { position: absolute; top: 192px; right: 22px; text-align: right; font: 500 12px var(--font-num, "Roboto Mono"), monospace; color: rgba(233,244,242,.82); text-shadow: 0 1px 2px rgba(0,0,0,.7); white-space: nowrap; }
+.coords[hidden] { display: none; }
 .minimap-hint { position: absolute; top: 192px; right: 22px; width: 168px; text-align: center; font-size: 12px; color: rgba(255,255,255,.72); }
 
 /* แถบแรง ออกซิเจน แบต */
@@ -75,10 +78,28 @@
 .prompt[hidden] { display: none; }
 .prompt.flip { left: auto; right: calc(50% + 9vw); }
 
-/* เป้าเล็งกลางจอ (โผล่ตอนสแกนหรือเล็ง) */
+/* เป้าเล็งกลางจอ (ขึ้นตลอดตอนถือเครื่องสแกน · ตอนยิงหมึก) · จุดกลางไว้อ้างอิงว่าเล็งตรงไหน */
 .reticle { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; transform: translate(-50%, -50%);
-  border: 1px dashed var(--holo); border-radius: 50%; opacity: .9; }
+  border: 1px dashed var(--holo); border-radius: 50%; opacity: .75; }
+.reticle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--holo); }
+.reticle.target { border: 2px solid var(--holo); opacity: 1; box-shadow: 0 0 8px rgba(111,240,224,.55); }
+.reticle.done { border: 2px solid #c8fff4; opacity: 1; background: rgba(111,240,224,.14); box-shadow: 0 0 12px rgba(111,240,224,.8); }
 .reticle[hidden] { display: none; }
+
+/* กรอบไฮไลต์รอบของที่เล็ง · มุมเหลี่ยมสี่มุม · เส้นกวาดขึ้นลงตอนกำลังสแกน · สว่างขึ้นตอนสแกนเสร็จ */
+.scan-box { position: absolute; pointer-events: none; opacity: .55; }
+.scan-box[hidden] { display: none; }
+.scan-box i { position: absolute; width: 16px; height: 16px; border: 0 solid var(--holo); }
+.scan-box .tl { left: 0; top: 0; border-top-width: 2px; border-left-width: 2px; }
+.scan-box .tr { right: 0; top: 0; border-top-width: 2px; border-right-width: 2px; }
+.scan-box .bl { left: 0; bottom: 0; border-bottom-width: 2px; border-left-width: 2px; }
+.scan-box .br { right: 0; bottom: 0; border-bottom-width: 2px; border-right-width: 2px; }
+.scan-box.scan { opacity: 1; background: rgba(111,240,224,.05); }
+.scan-box.scan::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--holo), transparent); box-shadow: 0 0 8px var(--holo); animation: scan-sweep 1.1s linear infinite alternate; }
+.scan-box.done { opacity: 1; background: rgba(111,240,224,.1); box-shadow: 0 0 14px rgba(111,240,224,.45); }
+.scan-box.done i { border-color: #c8fff4; }
+@keyframes scan-sweep { from { top: 0; } to { top: calc(100% - 2px); } }
 
 /* ===== หน้าโฮโลแกรม (แผนที่ กระเป๋า ยาน ตั้งค่า) ===== */
 .overlay { position: fixed; inset: 0; z-index: 2; background: rgba(2,10,12,.72); backdrop-filter: blur(3px); pointer-events: auto; display: grid; place-items: center; font-family: var(--font-ui); color: var(--ink); }
@@ -155,6 +176,15 @@ button.gslot.sel:hover { border-color: #ddc8ff; background: rgba(199,165,255,.22
 .viewer-host { position: relative; aspect-ratio: 1.35; border-radius: 6px; background: radial-gradient(circle at 50% 60%, rgba(111,240,224,.16), transparent 65%); }
 .viewer-host canvas { width: 100%; height: 100%; display: block; cursor: grab; }
 .viewer-host .turn { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 11px; color: var(--ink-dim); pointer-events: none; }
+/* ปุ่มขยายกรอบดูโมเดล มุมขวาบน · พื้นเข้มโปร่งให้อ่านออกบนโมเดล · ชี้แล้วพื้นฟ้าเขียวโทนเดียวกับปุ่มอื่นในเกม */
+.viewer-host .expand { position: absolute; top: 8px; right: 8px; min-width: 64px; padding: 4px 12px; font-size: 13px; background: rgba(4,18,22,.72); border: 1px solid rgba(111,240,224,.4); }
+.viewer-host .expand:hover { background: rgba(111,240,224,.26); border: 1px solid var(--holo); color: #effffc; }
+/* กรอบขยาย (พี่กันขอ 26 ต.ค. 2569) เต็มหน้าต่างคอลเลกชัน ทับรายการ · Esc หรือปุ่มย่อ คืนขนาดเดิม */
+.viewer-host.big { position: fixed; inset: 5vh 4vw; z-index: 5; aspect-ratio: auto; border: 1px solid var(--holo-line); border-radius: 10px;
+  background: radial-gradient(circle at 50% 58%, rgba(111,240,224,.16), transparent 62%), linear-gradient(160deg, rgb(8,32,34), rgb(3,14,17)); }
+.viewer-host.big .expand { top: 14px; right: 14px; font-size: 14px; padding: 6px 16px; }
+.viewer-host .vname { position: absolute; top: 16px; left: 20px; font-size: 18px; font-weight: 600; color: var(--holo); pointer-events: none; }
+.viewer-host.big .turn { bottom: 14px; font-size: 13px; }
 .layers { margin-top: 10px; font-size: 13px; line-height: 1.6; }
 .layer { padding: 6px 0 6px 11px; border-left: 2px solid rgba(111,240,224,.35); margin-bottom: 6px; }
 .layer .lt { display: block; font-size: 11px; color: var(--holo-dim); }
@@ -211,6 +241,7 @@ button.citem.on:hover { background: rgba(111,240,224,.26); }
 .scan-card .kind { color: var(--holo); font-size: 11px; letter-spacing: .06em; }
 .scan-card h3 { margin: 2px 0 8px; font-size: 19px; font-weight: 600; }
 .scan-card h3 small { font-size: 12px; color: var(--ink-dim); font-weight: 400; margin-left: 6px; }
+.scan-card .guess-note { margin: -4px 0 10px; font-size: 12px; color: var(--ink-dim); }
 
 /* ===== สภาพร่างกาย ===== */
 .fx-hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 52%, rgba(200,20,30,.55) 100%); }

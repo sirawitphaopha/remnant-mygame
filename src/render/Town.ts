@@ -350,3 +350,63 @@ export class Town {
     for (const f of this.far) f.o.visible = Math.hypot(f.x - x, f.z - z) < f.r;
   }
 }
+
+// ของในคอลเลกชัน (พี่กันขอ 26 ต.ค. 2569 ให้ของที่สแกนแล้วดูโมเดลได้ · เดิมตึกกับสะพานขึ้นเป็นกล่องเทา 10 ซม.)
+// ใช้กล่อง กองซาก เถาวัลย์ ป้าย ชุดเดียวกับในเมือง · ทำวัสดุใหม่ทุกครั้ง ปิดหน้าคอลเลกชันแล้วคืนหน่วยความจำได้ ไม่ไปลบของที่เมืองใช้อยู่
+
+/** ตึกหนึ่งหลัง (พิกัดในตึก) ทั้งภายนอก ภายใน เถาวัลย์ กองซาก ป้ายหน้าร้าน */
+export function buildingPreview(b: Building, boxes: TownBox[]): THREE.Group {
+  const r = rng(9091);
+  const g = new THREE.Group();
+  const none = new THREE.Matrix4();
+  const solid: { s: Solid; m: THREE.Matrix4 }[] = [];
+  const glass: { s: Solid; m: THREE.Matrix4 }[] = [];
+  const mounds: Part[] = [];
+  for (const bx of boxes) {
+    if (bx.kind === 'glass') glass.push({ s: bx, m: none });
+    else if (bx.kind === 'rubble') mounds.push(mound(bx, none, r));
+    else solid.push({ s: { ...bx, grime: bx.kind === 'wall' }, m: none });
+  }
+  const top = b.decay === 2 ? 1.6 : b.floors * b.storey;
+  if (b.decay === 0) {
+    for (let k = 0; k < 8; k++) {
+      solid.push({ s: { x: (r() - 0.5) * b.w * 0.7, z: (r() - 0.5) * b.d * 0.7, hx: 0.5 + r() * 1.4, hz: 0.5 + r() * 1.2, y0: top + 0.3, y1: top + 0.35 + r() * 0.06, color: 0x4e5a2c }, m: none });
+    }
+  }
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  applyDetail(mat, 'plaster');
+  if (solid.length) g.add(new THREE.Mesh(mergeBoxes(solid, r), mat));
+  if (glass.length) g.add(new THREE.Mesh(mergeBoxes(glass, r), new THREE.MeshLambertMaterial({ color: 0x2a3634, transparent: true, opacity: 0.45 })));
+  if (mounds.length) {
+    const mm = new THREE.MeshLambertMaterial({ vertexColors: true });
+    applyDetail(mm, 'stone');
+    g.add(new THREE.Mesh(assemble(mounds), mm));
+  }
+  const og = overgrowth(b, top, r);
+  if (og.stems.length) g.add(new THREE.Mesh(assemble(og.stems), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  if (og.cards.length) g.add(new THREE.Mesh(cardsGeometry(og.cards, r), new THREE.MeshLambertMaterial({ vertexColors: true, map: leafTexture('broad').clone(), alphaTest: 0.45, side: THREE.DoubleSide })));
+  if (b.sign && b.decay < 2) {
+    const w = Math.min(b.w * 0.8, Math.max(3, b.sign.length * 0.42));
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.19), new THREE.MeshLambertMaterial({ map: signTexture(b.sign).clone() }));
+    sign.position.set(0, Math.min(b.storey - 0.3, 2.75), -b.d / 2 - 0.17);
+    sign.rotation.y = Math.PI;
+    g.add(sign);
+  }
+  return g;
+}
+
+/** สะพานพังทั้งตัว (พื้นสะพาน เสา ราวสนิม) · พิกัดโลก ตัวดูโมเดลย้ายมากลางเอง */
+export function bridgePreview(bridge: BridgePart[]): THREE.Group {
+  const g = new THREE.Group();
+  const concrete = new THREE.MeshLambertMaterial({ color: 0x7a776e });
+  applyDetail(concrete, 'stone');
+  const rust = new THREE.MeshLambertMaterial({ color: 0x4e3424 });
+  applyDetail(rust, 'rust');
+  for (const p of bridge) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(p.hx * 2, p.y1 - p.y0, p.hz * 2), p.kind === 'rail' ? rust : concrete);
+    mesh.position.set(p.x, (p.y0 + p.y1) / 2, p.z);
+    mesh.rotation.y = p.rot;
+    g.add(mesh);
+  }
+  return g;
+}

@@ -1,6 +1,7 @@
 import { WORLD } from '../config/game';
 import { townDist, townWest, townZone, TOWN_FOREST } from './townZone';
 import { BRIDGE, CAVES, GORGE, LAKE, MOUNTAINS, REGIONS, RIVER, RIVER_WIDTH, ROADS, ROAD_WIDTH, SHIP, TOWN, distToPolyline, type RegionName } from './layout';
+import { MesaMap, mesaAway } from './mesas';
 import { Simplex2 } from './noise';
 
 // ตัวสร้างภูมิประเทศ 3 × 3 กม. · กติกาล้วน ไม่แตะภาพ ไม่แตะหน้าเว็บ
@@ -89,6 +90,8 @@ export class TerrainShaper {
   private detail = new Simplex2(WORLD.seed + 7);
   private biomeNoise = new Simplex2(WORLD.seed + 303);
   private dist = new CoarseDistance();
+  /** ภูเขายอดตัดทั้งแมพ แต่ละลูกหน้าตาของตัวเอง */
+  readonly mesas = new MesaMap();
   /** ความสูงพื้นตรงปากถ้ำแต่ละแห่ง (คิดก่อนปั้นเนินถ้ำ) */
   private caveBase: number[];
 
@@ -156,10 +159,10 @@ export class TerrainShaper {
       h += 5 * Math.max(north, edge) * this.detail.fbm(x / 60, z / 60, 3);
     }
 
-    // ที่ราบสูงขอบหน้าผา ไว้ปีนขึ้นดูวิว (ไม่ขึ้นใกล้เมือง ยาน ถนน)
-    const mesa = nz.fbm(x / 230 - 5, z / 230 + 9, 3);
-    const away = (1 - smooth(0.15, 0.6, north + edge)) * smooth(250, 420, Math.hypot(x - TOWN.x, z - TOWN.z)) * smooth(120, 220, Math.hypot(x - SHIP.x, z - SHIP.z));
-    h += (smooth(0.36, 0.42, mesa) * 14 + smooth(0.52, 0.57, mesa) * 10) * away;
+    // ภูเขายอดตัด (ที่ราบสูงขอบหน้าผา) ไว้ปีนขึ้นดูวิว ไม่ขึ้นบนเทือกเขา ใกล้เมือง ใกล้ยาน
+    // แต่ละลูกมีชนิดหิน ความสูง หน้าตัดหน้าผาของตัวเอง (world/mesas.ts · เดิมยกพื้นขึ้นทีเดียว 14 ม. เป็นผนังดิ่งทุกลูก)
+    const away = mesaAway(x, z);
+    if (away > 0.001) h += this.mesas.heightAt(x, z) * away;
 
     // หุบป่าดิบชื้น: ยกที่ราบสองฝั่งแม่น้ำ แล้วแม่น้ำกัดเป็นหุบลึกผาชัน
     const dv = this.riverDist(x, z);

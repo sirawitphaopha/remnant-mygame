@@ -185,6 +185,35 @@ export function scatterDebris(t: Terrain, blocked: (x: number, z: number) => boo
 export type PlantKind = 'fern' | 'flower' | 'bush' | 'mushroom' | 'moss';
 export const PLANT_KINDS: PlantKind[] = ['fern', 'flower', 'bush', 'mushroom', 'moss'];
 
+/**
+ * เศษใบไม้ร่วงบนพื้นป่า (พี่กันสั่ง 26 ต.ค. 2569 "เเละมันควรมีเศษใบไม้ด้วย") · แผ่นราบตามผิวดิน รอบตัวผู้เล่น
+ * ป่ายิ่งทึบยิ่งหนา · ป่าสนยักษ์กับทุ่งบนเขาเป็นใบเข็ม ป่าผสมสุ่มสองแบบ ที่เหลือเป็นใบกว้าง
+ * ตารางล็อกกับพิกัดโลก เดินไปมาแล้วแผ่นเดิมอยู่ที่เดิม
+ */
+export function scatterLitter(t: Terrain, cx: number, cz: number, radius: number): { broad: Placed[]; needle: Placed[] } {
+  const cell = 2.4;
+  const out = { broad: [] as Placed[], needle: [] as Placed[] };
+  const i0 = Math.floor((cx - radius) / cell);
+  const i1 = Math.floor((cx + radius) / cell);
+  const j0 = Math.floor((cz - radius) / cell);
+  const j1 = Math.floor((cz + radius) / cell);
+  const r2 = radius * radius;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const x = (i + hash2(i, j, 41)) * cell;
+      const z = (j + hash2(i, j, 42)) * cell;
+      if ((x - cx) ** 2 + (z - cz) ** 2 > r2) continue;
+      const dens = forestDensity(t, x, z);
+      if (dens < 0.2 || hash2(i, j, 43) > Math.min(0.9, dens * 1.15)) continue;
+      if (!canPlace(t, x, z, 0.7, 0)) continue;
+      const b = t.biomeAt(x, z);
+      const needle = b === BIOME.redwood || b === BIOME.alpine || (b === BIOME.dense && hash2(i, j, 44) < 0.45);
+      (needle ? out.needle : out.broad).push({ x, y: t.heightAt(x, z), z, rot: hash2(i, j, 45) * Math.PI * 2, scale: 1.7 + 1.3 * hash2(i, j, 46) });
+    }
+  }
+  return out;
+}
+
 /** พืชเล็กในรัศมีรอบตัว · ใช้ตารางที่ล็อกกับพิกัดโลก เดินไปมาแล้วต้นเดิมอยู่ที่เดิม */
 export function scatterPlants(t: Terrain, cx: number, cz: number, radius: number): Record<PlantKind, Placed[]> {
   const cell = 2.6;

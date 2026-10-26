@@ -278,8 +278,8 @@ const FORMS: Record<TreeForm | 'deadConifer' | 'deadBroad', FormSpec> = {
     style: 'broad',
     wood: (lod, rand) => {
       const p: Part[] = [{ geo: limb(V(), V(0, 8.4, 0), 0.5, 0.26, seg(lod, 9)), color: BARK_GREY, vary: 0.1, sway: [0, 0.06] }];
-      // พูพอนที่โคน
-      if (lod === 'near') for (let i = 0; i < 4; i++) { const a = i * 1.57 + 0.4; p.push({ geo: new THREE.BoxGeometry(1.6, 1.4, 0.12).translate(0.8, 0.7, 0).rotateY(a), color: BARK_GREY }); }
+      // พูพอนที่โคนปั้นใน addRoots เป็นครีบรากค้ำยันต่อเนื่องกับลำต้น
+      // (เดิมเป็นกล่องแบนสี่เหลี่ยม 4 แผ่น ขยายตามความสูงจริงกลายเป็นแผ่นกระดานสูงราว 6 ม. พี่กันทักว่าโคนต้นไม้ดูแปลก 26 ต.ค. 2569)
       if (lod !== 'far' && lod !== 'distant') branches(p, [], rand, lod === 'near' ? 6 : 3, 8.1, 8.6, 2.2, 0.35, 0.14, BARK_GREY, 5);
       return p;
     },
@@ -383,11 +383,161 @@ const FORMS: Record<TreeForm | 'deadConifer' | 'deadBroad', FormSpec> = {
   },
 };
 
+// ---------- โคนต้นกับราก (พี่กันสั่ง 26 ต.ค. 2569 "ต้นไม้ ควรมีราก ยิ่งต้นใหญ่ ยิ่งมีรากหนาๆ" · "ฝากดูโคนต้นไม้ มันดูแปลกๆ ทำให้มันสมจริงกว่านี้") ----------
+// รูปอ้างอิงกับที่มาอยู่ใน docs/REFERENCES-R2.md หัวข้อ 12
+// ของจริง: ลำต้นค่อย ๆ บานออกเป็นสันนูนหลายสันตั้งแต่สูงราวช่วงแขน เป็นเนื้อเดียวกับลำต้น (root flare)
+// สันพวกนี้กลายเป็นรากที่จมดินครึ่งท่อน คดเล็กน้อย แบนลง แล้วหายลงดินภายในไม่กี่เมตร
+// ยางนา (ไม้ป่าดิบชื้นต้นสูง): สันสูงบางเป็นรากค้ำยัน (buttress) · สนยักษ์ของจริงโคนบานกว้างแต่ไม่มีครีบสูง ใช้โคนบานแบบสันมน
+// (รุ่นสองให้สนยักษ์มีครีบสูง ต้นสูง 71 ม. ครีบสูงราว 12 ม. ดูเหมือนกระโจม) · โมเดลปั้นสูง 10 ม. แล้วย่อขยายตามความสูงจริง ต้นใหญ่รากหนาตาม
+// รุ่นแรกเป็นท่อตรงสองท่อนหักมุมกับกรวยแยกชิ้น ดูเหมือนขาแมงมุมปักดิน พี่กันทักว่าดูแปลก จึงปั้นใหม่แบบนี้
+// ไทรมีรากพันเป็นตาข่ายลงดินอยู่แล้ว · ปาล์ม เฟินต้น ไผ่ ไม่มีรากแผ่บนผิวดินแบบนี้
+const NO_ROOTS = new Set<string>(['fig', 'palm', 'treeFern', 'bamboo']);
+const BUTTRESS = new Set<string>(['yangNa']);
+
+interface Lobe { a: number; s: number; w: number }
+
+/** รากแผ่ไปไกลสุดจากกลางต้นกับรัศมีโคน (หน่วยของโมเดลสูง 10 ม.) · ส่วนวาดต้นไม้ใช้ดูว่าพื้นรอบโคนรับรากได้ไหม */
+const ROOT_SIZE = new Map<string, { reach: number; r0: number }>();
+export function rootSize(kind: string): { reach: number; r0: number } {
+  return ROOT_SIZE.get(kind) ?? { reach: 0, r0: 0 };
+}
+
+/**
+ * โคนบานเป็นสันราก: วงซ้อนจากใต้ดินขึ้นไปถึงความสูง H · รัศมีตามมุมมีสันนูนตรงมุมของแต่ละราก
+ * สันบานมากที่พื้น ค่อย ๆ จางเข้าหาลำต้นด้านบน (เป็นเนื้อเดียวกับลำต้น ไม่ใช่กรวยแยกชิ้น)
+ */
+function flareGeometry(r0: number, H: number, lobes: Lobe[], radial: number, rings: number, trunkAt: (y: number) => number): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const y0 = -0.3 * r0;
+  for (let j = 0; j <= rings; j++) {
+    const t = j / rings;
+    // วงล่างถี่กว่าวงบน (ส่วนที่บานเปลี่ยนเร็วอยู่ใกล้พื้น)
+    const tt = t * t;
+    const y = y0 + tt * (H - y0);
+    const f = Math.pow(1 - tt, 2.4);
+    for (let i = 0; i <= radial; i++) {
+      const th = (i / radial) * Math.PI * 2;
+      let lobe = 0;
+      for (const l of lobes) lobe += l.s * Math.pow(Math.max(0, Math.cos(th - l.a)), l.w);
+      // ขอบบนเท่ากับรัศมีลำต้นจริงตรงความสูงนั้น (หลบเข้าในเปลือกนิดเดียว) ไม่เห็นรอยขั้นตรงที่บรรจบลำต้น
+      const r = (trunkAt(Math.max(0, y)) * 0.985 + r0 * f * (0.28 + lobe)) * (1 + 0.05 * f * Math.sin(th * 7 + j * 1.3));
+      pos.push(Math.cos(th) * r, y, Math.sin(th) * r);
+    }
+  }
+  for (let j = 0; j < rings; j++) {
+    for (let i = 0; i < radial; i++) {
+      const a = j * (radial + 1) + i;
+      const b = a + radial + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** ท่อเรียวตามเส้นโค้ง หน้าตัดรีแบนลงตามแนวตั้ง (รากที่โผล่พ้นดินครึ่งท่อน) */
+function rootTube(pts: THREE.Vector3[], r0: number, r1: number, radial: number, seg: number, flat: number): THREE.BufferGeometry {
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const side = new THREE.Vector3();
+  const up2 = new THREE.Vector3();
+  for (let i = 0; i <= seg; i++) {
+    const u = i / seg;
+    const c = curve.getPointAt(u);
+    const tan = curve.getTangentAt(u);
+    side.crossVectors(tan, UP).normalize();
+    up2.crossVectors(side, tan).normalize();
+    const r = r0 + (r1 - r0) * Math.pow(u, 0.75);
+    for (let j = 0; j <= radial; j++) {
+      const a = (j / radial) * Math.PI * 2;
+      const sx = Math.cos(a) * r;
+      const sy = Math.sin(a) * r * flat;
+      pos.push(c.x + side.x * sx + up2.x * sy, c.y + side.y * sx + up2.y * sy, c.z + side.z * sx + up2.z * sy);
+    }
+  }
+  for (let i = 0; i < seg; i++) {
+    for (let j = 0; j < radial; j++) {
+      const a = i * (radial + 1) + j;
+      const b = a + radial + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+function addRoots(parts: Part[], kind: string, lod: TreeLod): void {
+  if (NO_ROOTS.has(kind) || !parts.length || (lod !== 'near' && lod !== 'mid')) return;
+  // ความกว้างโคนจากลำต้นจริงของโมเดล (ส่วนแรกคือลำต้น)
+  const posAttr = parts[0].geo.getAttribute('position');
+  let r0 = 0;
+  for (let i = 0; i < posAttr.count; i++) if (posAttr.getY(i) < 0.6) r0 = Math.max(r0, Math.hypot(posAttr.getX(i), posAttr.getZ(i)));
+  if (r0 < 0.05) return;
+  // รัศมีลำต้นตามความสูง (ลำต้นเรียวขึ้นไป) วัดจากยอดของชิ้นลำต้น
+  let topY = 0;
+  for (let i = 0; i < posAttr.count; i++) topY = Math.max(topY, posAttr.getY(i));
+  let rTop = 0;
+  for (let i = 0; i < posAttr.count; i++) if (posAttr.getY(i) > topY - 0.05) rTop = Math.max(rTop, Math.hypot(posAttr.getX(i), posAttr.getZ(i)));
+  const trunkAt = (y: number) => r0 + (rTop - r0) * Math.min(1, y / Math.max(0.1, topY));
+  const rand = rng(kind.length * 131 + kind.charCodeAt(0) * 17 + 5);
+  const color = parts[0].color;
+  const near = lod === 'near';
+  const buttress = BUTTRESS.has(kind);
+  // สันราก 5 ถึง 7 สัน มุมไม่เท่ากันเป๊ะ ใหญ่เล็กไม่เท่ากัน
+  const n = buttress ? 5 + Math.floor(rand() * 2) : 5 + Math.floor(rand() * 3);
+  const a0 = rand() * Math.PI * 2;
+  const lobes: Lobe[] = [];
+  for (let k = 0; k < n; k++) {
+    lobes.push({
+      a: a0 + (k / n) * Math.PI * 2 + (rand() - 0.5) * 0.6,
+      s: buttress ? 1.3 + rand() * 0.9 : 0.55 + rand() * 0.75,
+      // สันค้ำยันบางและคม · สันรากทั่วไปกว้างมน
+      w: buttress ? 26 + rand() * 16 : 7 + rand() * 6,
+    });
+  }
+  const H = r0 * (buttress ? 3.2 : 2.2);
+  let reach = 0;
+  parts.push({ geo: flareGeometry(r0, H, lobes, near ? 26 : 16, near ? 6 : 4, trunkAt), color, vary: 0.12 });
+  // รากต่อจากปลายสันลงดิน: โผล่ครึ่งท่อน คดเล็กน้อย แบนลง เรียวแล้วมุดดิน
+  for (const l of lobes) {
+    const ca = Math.cos(l.a);
+    const sa = Math.sin(l.a);
+    const px = -sa;
+    const pz = ca;
+    const tip = r0 * (0.97 + 0.28 + l.s);
+    // รากโผล่พ้นดินยาวราว 1.2 ถึง 2.4 เท่าของรัศมีโคน แล้วมุดดิน (ยาวเกินจะยื่นไปลอยเหนือพื้นที่ต่ำลงบนเนิน)
+    const L = r0 * (buttress ? 1.4 + rand() * 1.0 : 1.2 + rand() * 1.2);
+    const wig = (rand() - 0.5) * r0 * 0.9;
+    const start = tip * 0.72;
+    const pts = [
+      V(ca * start, r0 * 0.08, sa * start),
+      V(ca * (tip + L * 0.3) + px * wig * 0.4, r0 * 0.02, sa * (tip + L * 0.3) + pz * wig * 0.4),
+      V(ca * (tip + L * 0.65) + px * wig, -r0 * 0.08, sa * (tip + L * 0.65) + pz * wig),
+      V(ca * (tip + L) + px * wig * 0.6, -r0 * 0.4, sa * (tip + L) + pz * wig * 0.6),
+    ];
+    reach = Math.max(reach, Math.hypot(pts[3].x, pts[3].z));
+    const rs = r0 * (buttress ? 0.22 : 0.3) * Math.sqrt(l.s);
+    parts.push({ geo: rootTube(pts, rs, r0 * 0.04, near ? 6 : 4, near ? 7 : 4, 0.6), color, vary: 0.12 });
+  }
+  if (near) ROOT_SIZE.set(kind, { reach, r0 });
+}
+
 const cache = new Map<string, TreeModel>();
 
-/** โมเดลต้นไม้ชนิดนั้นที่ระดับนั้น (สร้างครั้งเดียวเก็บไว้ใช้ซ้ำ) */
-export function treeModel(kind: TreeKind, lod: TreeLod): TreeModel {
-  const key = `${kind}:${lod}`;
+/**
+ * โมเดลต้นไม้ชนิดนั้นที่ระดับนั้น (สร้างครั้งเดียวเก็บไว้ใช้ซ้ำ)
+ * roots = false: ไม่มีโคนบานกับรากแผ่ (ต้นริมตลิ่งหรือบนลาดชัน รากจะลอยเหนือน้ำหรือเหนือพื้นที่ต่ำลง)
+ */
+export function treeModel(kind: TreeKind, lod: TreeLod, roots = true): TreeModel {
+  const key = `${kind}:${lod}${roots ? '' : ':bare'}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const sp = SPECIES_BY_ID.get(kind);
@@ -417,6 +567,7 @@ export function treeModel(kind: TreeKind, lod: TreeLod): TreeModel {
     model = { wood: assemble(form.solid(lod, solidColor)), leaves: null, style: form.style };
   } else {
     const parts = form.wood(lod, rand);
+    if (roots) addRoots(parts, kind, lod);
     // ผลไม้ (แอปเปิลแดง มะม่วงเขียวเหลือง) ติดในพุ่ม เฉพาะระดับใกล้
     if (sp?.fruit && lod === 'near') {
       const cy = sp.form === 'orchard' ? 5.0 : 6.4;

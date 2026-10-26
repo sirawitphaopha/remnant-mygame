@@ -4,6 +4,7 @@ import { MOUNTAINS, RAILWAY, ROAD_WIDTH, TOWN, distToPolyline, distToRoads } fro
 import { pavedLeft } from '../world/scatter';
 import { Simplex2 } from '../world/noise';
 import { BIOME, BIOME_COUNT, BIOME_STEP } from '../world/terrainGen';
+import { sharedMesaMap, type MesaRock } from '../world/mesas';
 import { smooth, type Terrain } from '../world/Terrain';
 import { makeDetailTexture } from './textures';
 
@@ -38,6 +39,7 @@ const C = {
   sidewalk: new THREE.Color(0.3, 0.29, 0.27),
   ballast: new THREE.Color(0.24, 0.22, 0.2),
   concrete: new THREE.Color(0.45, 0.44, 0.41),
+  moss: new THREE.Color(0.2, 0.27, 0.11),
 };
 
 /**
@@ -64,6 +66,19 @@ BIOME_COLORS[BIOME.rock] = [C.rockA, C.rockB];
 BIOME_COLORS[BIOME.snow] = [C.snow, new THREE.Color(0.78, 0.81, 0.85)];
 if (BIOME_COLORS.length !== BIOME_COUNT) throw new Error('สีพื้นไม่ครบทุกชนิดพื้นที่');
 
+/**
+ * สีผนังภูเขายอดตัดตามชนิดหิน (สีหลัก สีแซม) · หินทรายน้ำตาลอมเหลือง · หินปูนครีมเทา · หินแกรนิตเทาอมชมพู · หินดินดานเทาเข้มอมน้ำตาล
+ * ภูเขาอื่นใช้สีหินเดิม
+ */
+const ROCK_TINT: Record<MesaRock, [THREE.Color, THREE.Color]> = {
+  sandstone: [new THREE.Color(0.46, 0.36, 0.25), new THREE.Color(0.54, 0.43, 0.30)],
+  limestone: [new THREE.Color(0.50, 0.48, 0.43), new THREE.Color(0.58, 0.56, 0.50)],
+  granite: [new THREE.Color(0.40, 0.38, 0.37), new THREE.Color(0.48, 0.44, 0.42)],
+  shale: [new THREE.Color(0.27, 0.25, 0.23), new THREE.Color(0.33, 0.30, 0.27)],
+};
+/** มอสกับไลเคนบนผนังแต่ละชนิดหิน (หินปูนชื้นมอสขึ้นง่าย หินดินดานร่วนแตกบ่อยมอสเกาะยาก) */
+const MOSSY: Record<MesaRock, number> = { sandstone: 0.25, limestone: 0.35, granite: 0.3, shale: 0.2 };
+
 interface Tile {
   key: string;
   level: number;
@@ -83,6 +98,8 @@ export class TerrainMesh {
   readonly group = new THREE.Group();
   readonly material: THREE.MeshLambertMaterial;
   private colorNoise = new Simplex2(WORLD.seed + 55);
+  /** ภูเขายอดตัด (ชุดเดียวกับตัวสร้างพื้น) ไว้รู้ชนิดหินของแต่ละลูก */
+  private mesas = sharedMesaMap();
   private tiles = new Map<string, Tile>();
   private queue: Tile[] = [];
   private frame = 0;
@@ -96,14 +113,45 @@ export class TerrainMesh {
     // พื้นเปียก: สีเข้มขึ้น มีแสงสะท้อนฟ้าตอนมองเฉียง (แบบพื้นหลังฝน)
     this.material.onBeforeCompile = (sh) => {
       sh.uniforms.uWet = WET;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aStrata;\nvarying float vStrata;\nvarying vec3 vTerrPos;\nvarying vec3 vTerrNrm;')
+        .replace(
+          '#include <fog_vertex>',
+          `#include <fog_vertex>
+          vStrata = aStrata;
+          vTerrPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+          vTerrNrm = normalize(mat3(modelMatrix) * objectNormal);`,
+        );
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uWet;')
+        .replace('#include <common>', '#include <common>\nuniform float uWet;\nvarying float vStrata;\nvarying vec3 vTerrPos;\nvarying vec3 vTerrNrm;')
+        .replace(
+          '#include <map_fragment>',
+          `{
+            // ลายพื้นแปะสามทิศ (เดิมแปะจากด้านบนอย่างเดียว ผนังชันลายถูกยืดเป็นเส้นตั้งยาว พี่กันทัก 26 ต.ค. 2569)
+            vec3 tw = pow(abs(vTerrNrm), vec3(4.0));
+            tw /= (tw.x + tw.y + tw.z + 1e-5);
+            vec3 tp = vTerrPos / 7.0;
+            diffuseColor *= texture2D(map, tp.zy) * tw.x + texture2D(map, tp.xz) * tw.y + texture2D(map, tp.xy) * tw.z;
+          }
+          {
+            // ชั้นหินแนวนอนบนผนังภูเขายอดตัด (ไว้ดูไกล ใกล้ ๆ มีผนังหินที่ปั้นแยกทับ render/Cliffs.ts)
+            // เฉพาะช่วงชันกว่าราว 60 องศา (เดิมขึ้นถึงลาดหินร่วง ทั้งลูกเป็นลายเส้นเท่ากันเหมือนเค้ก) · หนาชั้นละราว 2.4 ม. สีต่างกันทีละชั้น
+            // vStrata = ความชัดของชั้นตามชนิดหินของลูกนั้น (หินทรายชัด หินแกรนิตแทบไม่มี · ภูเขาอื่น 0 หน้าตาเท่าเดิม)
+            float steep = 1.0 - smoothstep(0.3, 0.55, vTerrNrm.y);
+            float yb = vTerrPos.y + 1.4 * sin(vTerrPos.x * 0.023 + 1.3) + 1.1 * sin(vTerrPos.z * 0.019 - 0.7);
+            float bed = fract(yb / 2.4);
+            float tone = fract(sin(floor(yb / 2.4) * 78.233) * 43758.5453) - 0.5;
+            // รอยต่อชั้นเข้มเฉพาะบางชั้น (ชั้นหินจริงไม่ได้มีรอยต่อชัดทุกชั้น)
+            float seam = (1.0 - smoothstep(0.0, 0.07, bed) * (1.0 - smoothstep(0.93, 1.0, bed))) * step(0.0, tone);
+            diffuseColor.rgb *= 1.0 + steep * vStrata * (0.18 * tone - 0.22 * seam);
+          }`,
+        )
         .replace('#include <opaque_fragment>', `
           float wetSheen = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 3.0);
           outgoingLight = outgoingLight * (1.0 - 0.38 * uWet) + uWet * 0.05 * wetSheen * vec3(0.75, 0.8, 0.85);
           #include <opaque_fragment>`);
     };
-    this.material.customProgramCacheKey = () => 'terrain-wet';
+    this.material.customProgramCacheKey = () => 'terrain-wet-strata';
     // แผ่นใหญ่สุดสร้างทันที ระหว่างรอแผ่นละเอียดจะได้มีพื้นให้เห็นเสมอ
     this.build(this.tile(0, 0, 0));
   }
@@ -215,10 +263,12 @@ export class TerrainMesh {
     const col = new Float32Array(count * 3);
     const uv = new Float32Array(count * 2);
     const nor = new Float32Array(count * 3);
+    const str = new Float32Array(count);
     const tmp = new THREE.Color();
     const ne = Math.max(1, step * 0.5);
     let v = 0;
-    const put = (x: number, y: number, z: number, nx: number, ny: number, nz: number, c: THREE.Color) => {
+    const put = (x: number, y: number, z: number, nx: number, ny: number, nz: number, c: THREE.Color, strata = this.strataAt(x, z)) => {
+      str[v] = strata;
       pos[v * 3] = x;
       pos[v * 3 + 1] = y;
       pos[v * 3 + 2] = z;
@@ -264,7 +314,7 @@ export class TerrainMesh {
     const start = v;
     for (const e of edge) {
       tmp.setRGB(col[e * 3], col[e * 3 + 1], col[e * 3 + 2]);
-      put(pos[e * 3], pos[e * 3 + 1] - skirt, pos[e * 3 + 2], nor[e * 3], nor[e * 3 + 1], nor[e * 3 + 2], tmp);
+      put(pos[e * 3], pos[e * 3 + 1] - skirt, pos[e * 3 + 2], nor[e * 3], nor[e * 3 + 1], nor[e * 3 + 2], tmp, str[e]);
     }
     for (let k = 0; k < edge.length - 1; k++) {
       const a = edge[k];
@@ -278,9 +328,15 @@ export class TerrainMesh {
     g.setAttribute('normal', new THREE.BufferAttribute(nor.subarray(0, v * 3), 3));
     g.setAttribute('color', new THREE.BufferAttribute(col.subarray(0, v * 3), 3));
     g.setAttribute('uv', new THREE.BufferAttribute(uv.subarray(0, v * 2), 2));
+    g.setAttribute('aStrata', new THREE.BufferAttribute(str.subarray(0, v), 1));
     g.setIndex(idx);
     g.computeBoundingSphere();
     return g;
+  }
+
+  /** ความชัดของชั้นหินแนวนอนที่จุดนั้น (ภูเขายอดตัดตามชนิดหิน · ที่อื่น 0) */
+  private strataAt(x: number, z: number): number {
+    return this.mesas.mesaAt(x, z) ? this.mesas.shapeAt(x, z).strata : 0;
   }
 
   /** สีพื้นตามชนิดพื้นที่ (ผสม 4 ช่องรอบตัว ขอบไม่เป็นขั้นบันได) แล้วซ้อนหน้าผา หิมะ ชายน้ำ ถนน ลานเมือง */
@@ -318,9 +374,12 @@ export class TerrainMesh {
     // ริมน้ำเป็นโคลนกับทราย
     const wet = 1 - smooth(WORLD.waterLevel - 0.5, WORLD.waterLevel + 1.6, h);
     out.lerp(h < WORLD.waterLevel ? C.mud : C.sand, wet);
-    // หน้าผาเป็นหิน
+    // หน้าผาเป็นหิน · ภูเขายอดตัดใช้สีตามชนิดหินของลูกนั้น มีมอสกับไลเคนเกาะเป็นหย่อม เพิงกับลาดหินร่วงเขียวกว่าผนังตั้ง
     const rock = smooth(0.82, 0.62, ny + n2 * 0.04);
-    out.lerp(n2 > 0 ? C.rockA : C.rockB, rock);
+    const mesa = this.mesas.mesaAt(x, z);
+    const tint = mesa ? ROCK_TINT[mesa.rock] : [C.rockA, C.rockB];
+    out.lerp(n2 > 0 ? tint[0] : tint[1], rock);
+    if (mesa) out.lerp(C.moss, rock * MOSSY[mesa.rock] * smooth(0, 0.6, n1 + 0.8 * (ny - 0.35)));
     // หิมะเหนือแนวหิมะ ไม่เกาะหน้าผาชัน
     const snow = smooth(MOUNTAINS.snowLine - 30 + 25 * n1, MOUNTAINS.snowLine + 35, h) * smooth(0.45, 0.75, ny);
     out.lerp(C.snow, snow);

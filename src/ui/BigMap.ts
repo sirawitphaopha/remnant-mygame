@@ -90,6 +90,8 @@ export class BigMap {
   private cx = 0;
   private cz = 0;
   private last: { x: number; z: number; heading: number; markers: MapMarker[] } = { x: 0, z: 0, heading: 0, markers: [] };
+  /** จุดใต้เมาส์บนแผนที่ (เมตร) ไว้ขึ้นพิกัด · null = เมาส์ไม่อยู่บนแผนที่ */
+  private hover: { x: number; z: number; sx: number; sy: number } | null = null;
 
   show(x: number, z: number, heading: number, markers: MapMarker[]): void {
     this.root.hidden = false;
@@ -125,7 +127,14 @@ export class BigMap {
     let drag: { x: number; y: number } | null = null;
     cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
     cv.addEventListener('pointermove', (e) => {
-      if (!drag) return;
+      // พิกัดตรงจุดที่เมาส์ชี้ (พี่กันขอ 26 ต.ค. 2569 ไว้บอกตำแหน่งที่อยากให้แก้)
+      if (!drag) {
+        const r = cv.getBoundingClientRect();
+        const at = toWorld(e);
+        this.hover = { x: at.x, z: at.z, sx: ((e.clientX - r.left) / r.width) * cv.width, sy: ((e.clientY - r.top) / r.height) * cv.height };
+        this.draw();
+        return;
+      }
       const r = cv.getBoundingClientRect();
       const V = WORLD.size / this.zoom;
       this.cx -= ((e.clientX - drag.x) / r.width) * V;
@@ -137,6 +146,7 @@ export class BigMap {
     const end = () => { drag = null; };
     cv.addEventListener('pointerup', end);
     cv.addEventListener('pointercancel', end);
+    cv.addEventListener('pointerleave', () => { this.hover = null; this.draw(); });
     cv.addEventListener('dblclick', () => { this.zoom = 1; this.cx = this.cz = 0; this.draw(); });
   }
 
@@ -154,7 +164,7 @@ export class BigMap {
     const { x, z, heading, markers } = this.last;
     if (this.explore.dirty) this.map.refresh(this.explore);
     const km = WORLD.size / 1000;
-    this.sub.textContent = `${t('mapSub')} ${Math.round(this.explore.fraction() * 100)}% · ${km} × ${km} ${t('km')} · ${t('mapZoomHint')}`;
+    this.sub.textContent = `${t('mapSub')} ${Math.round(this.explore.fraction() * 100)}% · ${km} × ${km} ${t('km')} · ${t('mapYou')} X ${Math.round(x)} · Y ${Math.round(-z)} · ${t('mapZoomHint')}`;
     const c = this.canvas.getContext('2d')!;
     const S = this.canvas.width;
     const V = WORLD.size / this.zoom;
@@ -175,6 +185,23 @@ export class BigMap {
       c.beginPath(); c.moveTo(gx, 0); c.lineTo(gx, S); c.stroke();
       c.beginPath(); c.moveTo(0, gz); c.lineTo(S, gz); c.stroke();
     }
+    // เลขพิกัดกำกับเส้นตาราง: X ตามขอบบน · Y ตามขอบซ้าย (Y เหนือบวก = −z ในโค้ด) · กลางแมพคือ 0 0
+    // ภาพแผนที่ 1000 จุดถูกย่อลงราวครึ่งหนึ่งตอนแสดงบนจอ ตัวเลขจึงต้องใหญ่ในภาพ (เดิม 15 จุด บนจอเหลือราว 6 จุด อ่านไม่ออก)
+    c.font = '600 30px "Roboto Mono", monospace';
+    c.fillStyle = 'rgba(111,240,224,.75)';
+    c.textBaseline = 'top';
+    c.textAlign = 'center';
+    for (let g = -WORLD.half; g <= WORLD.half; g += gridStep) {
+      const gx = (g - left) * k;
+      if (gx > 50 && gx < S - 50) c.fillText(String(g), gx, 8);
+    }
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    for (let g = -WORLD.half; g <= WORLD.half; g += gridStep) {
+      const gz = (g - top) * k;
+      if (gz > 50 && gz < S - 24) c.fillText(String(-g), 8, gz);
+    }
+    c.textBaseline = 'alphabetic';
     const px = (v: number) => (v - left) * k;
     const pz = (v: number) => (v - top) * k;
     // ชื่อที่ (เฉพาะที่เคยไป)
@@ -218,5 +245,24 @@ export class BigMap {
     c.fillStyle = '#fff';
     c.beginPath(); c.moveTo(0, -18); c.lineTo(-12, 13); c.lineTo(0, 7); c.lineTo(12, 13); c.closePath(); c.fill();
     c.restore();
+    // พิกัดตรงจุดที่เมาส์ชี้ กากบาทเล็ก ๆ กับป้ายเลข
+    if (this.hover) {
+      const h = this.hover;
+      const label = `X ${Math.round(h.x)} · Y ${Math.round(-h.z)}`;
+      c.strokeStyle = '#fff';
+      c.lineWidth = 4;
+      c.beginPath(); c.moveTo(h.sx - 18, h.sy); c.lineTo(h.sx + 18, h.sy); c.moveTo(h.sx, h.sy - 18); c.lineTo(h.sx, h.sy + 18); c.stroke();
+      c.font = '600 38px "Roboto Mono", monospace';
+      const w = c.measureText(label).width + 28;
+      const bx = Math.min(S - w - 6, h.sx + 26);
+      const by = Math.max(6, h.sy - 74);
+      c.fillStyle = 'rgba(5,11,12,.88)';
+      c.fillRect(bx, by, w, 54);
+      c.fillStyle = '#e9f4f2';
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.fillText(label, bx + 14, by + 28);
+      c.textBaseline = 'alphabetic';
+    }
   }
 }
